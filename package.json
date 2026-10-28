@@ -1,1 +1,27 @@
-{"name":"familieokonomi-v01","version":"0.1.0","main":"expo-router/entry","scripts":{"start":"expo start","android":"expo start --android","web":"expo start --web"},"dependencies":{"@expo/vector-icons":"latest","expo":"latest","expo-router":"latest","expo-status-bar":"latest","react":"latest","react-native":"latest","react-native-safe-area-context":"latest","react-native-screens":"latest"},"devDependencies":{"typescript":"latest"},"private":true}
+{
+  "name": "familieokonomi-v01",
+  "version": "0.1.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "latest",
+    "expo": "latest",
+    "expo-constants": "~58.0.14",
+    "expo-font": "~58.0.11",
+    "expo-linking": "~58.0.15",
+    "expo-router": "latest",
+    "expo-status-bar": "latest",
+    "react": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-screens": "latest"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  },
+  "private": true
+}
