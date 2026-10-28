@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useState}from'react';
-import{Alert,Image,ImageBackground,KeyboardAvoidingView,Modal,Platform,Pressable,SafeAreaView,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
+import{Alert,Image,ImageBackground,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import AsyncStorage from'@react-native-async-storage/async-storage';
+import{SafeAreaView}from'react-native-safe-area-context';
 import DateTimePicker from'@react-native-community/datetimepicker';
 import Slider from'@react-native-community/slider';
 import * as ImagePicker from'expo-image-picker';
