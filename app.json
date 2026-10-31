@@ -3,6 +3,7 @@
     "name": "Overs",
     "slug": "overs",
     "version": "0.1.0",
+    "icon": "./assets/images/icon.png",
     "orientation": "portrait",
     "scheme": "overs",
     "userInterfaceStyle": "light",
@@ -11,6 +12,7 @@
       "@react-native-community/datetimepicker"
     ],
     "ios": {
+      "bundleIdentifier": "com.grevelen.overs",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
