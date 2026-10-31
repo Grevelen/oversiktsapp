@@ -3,7 +3,6 @@
     "name": "Overs",
     "slug": "overs",
     "version": "0.1.0",
-    "icon": "./assets/images/icon.png",
     "orientation": "portrait",
     "scheme": "overs",
     "userInterfaceStyle": "light",
@@ -15,8 +14,7 @@
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "bundleIdentifier": "com.grevelen.overs"
+      }
     },
     "android": {},
     "web": {
@@ -32,6 +30,12 @@
         "projectId": "b88319ac-8bf0-475c-b841-7d10ab7bbe05"
       }
     },
-    "owner": "grevelen"
+    "owner": "grevelen",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b88319ac-8bf0-475c-b841-7d10ab7bbe05"
+    }
   }
 }
