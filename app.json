@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "Familieøkonomi",
-    "slug": "familieokonomi-v01",
+    "name": "Overs",
+    "slug": "overs",
     "version": "0.1.0",
     "orientation": "portrait",
-    "scheme": "familieokonomi",
+    "scheme": "overs",
     "userInterfaceStyle": "light",
     "plugins": [
       "expo-router",
@@ -16,6 +16,17 @@
     "android": {},
     "web": {
       "bundler": "metro"
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "b88319ac-8bf0-475c-b841-7d10ab7bbe05"
+      }
+    },
+    "owner": "grevelen"
   }
 }

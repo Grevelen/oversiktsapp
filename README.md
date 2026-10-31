@@ -1,14 +1,26 @@
-# Familieøkonomi v0.1
+# Overs
 
-Prototype for iPhone testing via Expo Go.
+Overs er en personlig økonomiapp bygget med Expo og React Native. Appen samler budsjett, forsikringer, abonnement, sparing og økonomisk innsikt i én oversikt.
 
-## Windows-oppsett
-1. Installer Node.js LTS.
-2. Installer Expo Go på iPhone.
-3. Åpne PowerShell i prosjektmappen.
-4. Kjør `npm install`.
-5. Kjør `npx expo login` og logg inn med samme Expo-konto som i Expo Go.
-6. Kjør `npx expo start`.
-7. Skann QR-koden med iPhone og åpne i Expo Go.
+## Status
+Prosjektet er i aktiv utvikling, versjon 0.1.0. Data lagres lokalt med AsyncStorage. Appen har førstegangsoppsett og starter med tomme økonomidata.
 
-Testdataene i prototypen er demonstrasjonsdata og skal ikke brukes som faktiske familietall.
+## Struktur
+```text
+app/
+  index.tsx
+src/
+  overs/
+    model.ts
+    styles.ts
+```
+Kun faktiske ruter ligger under `app/`. Hjelpefiler ligger under `src/`.
+
+## Lokal utvikling
+```powershell
+npm install
+npx expo start
+```
+
+## EAS
+EAS-prosjektet er konfigurert som `@grevelen/overs`, og `preview` bruker intern distribusjon.
