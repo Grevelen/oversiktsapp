@@ -6,21 +6,22 @@ export type Tab = 'Oversikt' | 'Budsjett' | 'Forsikringer' | 'Abonnement' | 'Spa
 export type Screen = Tab;
 export type GoalCategory = 'Sparemål' | 'Buffer' | 'Fond' | 'Aksjer' | 'Pensjon';
 export type FormKind = 'insurance' | 'subscription' | 'goal' | 'income' | 'expense' | null;
-export type Insurance = { id:string; type:string; provider:string; monthly:number; coverage:string; renewal:string; registeredAmount?:number; registeredPeriod?:Period; bonus?:string; coverageType?:string; insuredValue?:string; deductible?:string; startDate?:string; expiryDate?:string; note?:string };
+export type InsuredValueUnit = 'kr' | 'G';
+export type Insurance = { id:string; type:string; provider:string; monthly:number; coverage:string; renewal:string; registeredAmount?:number; registeredPeriod?:Period; bonus?:string; coverageType?:string; insuredValue?:string; insuredValueUnit?:InsuredValueUnit; deductible?:string; startDate?:string; expiryDate?:string; note?:string };
 export type Subscription = { id:string; name:string; category:string; monthly:number; renewal:string; registeredAmount?:number; registeredPeriod?:Period };
 export type Goal = { id:string; name:string; target:number; saved:number; targetDate:string; category:GoalCategory; monthly:number; imageUri?:string };
 export type Period = 'month' | 'quarter' | 'year';
 export type BudgetItem = { id:string; name:string; monthly:number; category:string; origin?:string; interest?:number; principal?:number; registeredAmount?:number; registeredPeriod?:Period };
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 4;
 export type AppData = { dataVersion:number; insurance:Insurance[]; subscriptions:Subscription[]; goals:Goal[]; incomes:BudgetItem[]; expenses:BudgetItem[]; dismissedInsights?:string[]; skippedSetup?:string[]; onboardingComplete?:boolean; };
 export type BudgetRow = BudgetItem & { source:'income'|'manual'|'insurance'|'subscription'|'saving'; sourceId?:string };
 
 export const K = '@oversiktsapp/v061';
 export const C = {bg:'#EEE7D6',white:'#FFF',surface:'#F8F3E8',surfaceStrong:'#F3ECDE',ink:'#13231E',sub:'#66716C',muted:'#8A918E',green:'#0C624E',dark:'#173D32',pale:'#DDF3E9',icon:'#DCEAE4',line:'#D8D0C0',red:'#A8453C',redPale:'#FBEAE8',amber:'#95610F',amberPale:'#FFF3D7'};
-export const fmt = (n:number)=>new Intl.NumberFormat('nb-NO',{maximumFractionDigits:0}).format(Math.round(n));
+export const fmt = (n:number)=>new Intl.NumberFormat('nb-NO',{minimumFractionDigits:Number.isInteger(n)?0:2,maximumFractionDigits:2}).format(n);
 export const kr = (n:number)=>`${fmt(n)} kr`;
 export const num = (x='')=>{const n=Number(x.replace(/\s/g,'').replace(',','.').replace(/[^0-9.]/g,''));return Number.isFinite(n)?n:0};
-export const groupDigits = (x='')=>{const clean=x.replace(/\D/g,'');return clean?new Intl.NumberFormat('nb-NO',{maximumFractionDigits:0}).format(Number(clean)):''};
+export const groupDigits = (x='')=>{const raw=x.replace(/\s/g,'').replace('.',',').replace(/[^0-9,]/g,'');const [whole='',...rest]=raw.split(',');const decimals=rest.join('').slice(0,2);const grouped=whole?new Intl.NumberFormat('nb-NO',{maximumFractionDigits:0}).format(Number(whole)):'';return decimals.length||raw.includes(',')?`${grouped||'0'},${decimals}`:grouped};
 export const uid = (p:string)=>`${p}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 export const dateText = (d:Date)=>new Intl.DateTimeFormat('nb-NO',{day:'2-digit',month:'2-digit',year:'numeric'}).format(d);
 export const parseDate = (x='')=>{const m=x.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);return m?new Date(+m[3],+m[2]-1,+m[1]):null};
@@ -45,7 +46,7 @@ export function migrateAppData(input:unknown):AppData{
  const old=input&&typeof input==='object'?input as Partial<AppData>&Record<string,unknown>:{};
  const incomes=asArray<BudgetItem>(old.incomes).map(x=>({...x,registeredAmount:x.registeredAmount??x.monthly??0,registeredPeriod:x.registeredPeriod??'month'}));
  const expenses=asArray<BudgetItem>(old.expenses).map(x=>({...x,registeredAmount:x.registeredAmount??x.monthly??0,registeredPeriod:x.registeredPeriod??'month'}));
- const insurance=asArray<Insurance>(old.insurance).map(x=>({...x,monthly:x.monthly??0,registeredAmount:x.registeredAmount??x.monthly??0,registeredPeriod:x.registeredPeriod??'month'}));
+ const insurance=asArray<Insurance>(old.insurance).map(x=>({...x,monthly:x.monthly??0,registeredAmount:x.registeredAmount??x.monthly??0,registeredPeriod:x.registeredPeriod??'month',insuredValueUnit:x.insuredValueUnit??'kr'}));
  const subscriptions=asArray<Subscription>(old.subscriptions).map(x=>({...x,monthly:x.monthly??0,registeredAmount:x.registeredAmount??x.monthly??0,registeredPeriod:x.registeredPeriod??'month'}));
  const goals=asArray<Goal>(old.goals).map(g=>({...g,target:g.target??0,saved:g.saved??0,monthly:g.monthly??0,category:g.category??'Sparemål',targetDate:g.targetDate??''}));
  const dismissedInsights=asArray<string>(old.dismissedInsights).filter(x=>typeof x==='string').map(stableInsightId).filter((id,i,a)=>a.indexOf(id)===i);
