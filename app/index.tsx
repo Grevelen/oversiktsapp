@@ -77,6 +77,47 @@ const durationText = (months: number) => {
     ? `${yearText} og ${rest} ${rest === 1 ? "måned" : "måneder"}`
     : yearText;
 };
+type TextSuggestion = { group: string; label: string };
+const normalizeSearchText = (value = "") =>
+  value
+    .toLocaleLowerCase("nb-NO")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+function TextSuggestions({
+  query,
+  groups,
+  onSelect,
+}: {
+  query: string;
+  groups: [string, string[]][];
+  onSelect: (suggestion: TextSuggestion) => void;
+}) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (normalizedQuery.length < 2) return null;
+  const matches = groups
+    .flatMap(([group, labels]) => labels.map((label) => ({ group, label })))
+    .filter(({ group, label }) =>
+      `${normalizeSearchText(group)} ${normalizeSearchText(label)}`.includes(
+        normalizedQuery,
+      ),
+    )
+    .slice(0, 8);
+  if (!matches.length) return null;
+  return (
+    <View style={S.suggestionWrap}>
+      {matches.map((suggestion) => (
+        <Pressable
+          key={`${suggestion.group}-${suggestion.label}`}
+          onPress={() => onSelect(suggestion)}
+          style={S.suggestionChip}
+        >
+          <Text style={S.suggestionText}>{suggestion.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("Oversikt");
@@ -875,15 +916,15 @@ function Overview({
                     <Text style={S.reviewedButtonText}>Legg til buffer</Text>
                   </Pressable>
                   <Pressable
-                    onPress={() => go("Sparing")}
-                    style={S.insightOpenAction}
+                    onPress={() => onDismiss(first.id)}
+                    style={S.reviewedButton}
                   >
-                    <Text style={S.insightOpenActionText}>Åpne sparemål</Text>
                     <Ionicons
-                      name="chevron-forward"
-                      size={15}
+                      name="play-skip-forward-outline"
+                      size={18}
                       color={C.green}
                     />
+                    <Text style={S.reviewedButtonText}>Hopp over</Text>
                   </Pressable>
                 </>
               ) : (
@@ -2679,6 +2720,14 @@ function Form({
                   placeholder="Skriv egen inntektstype (valgfritt)"
                   style={S.input}
                 />
+                <TextSuggestions
+                  query={f.category || ""}
+                  groups={incomeTypes}
+                  onSelect={({ group, label }) => {
+                    setIncomeGroup(group);
+                    set("category", label);
+                  }}
+                />
                 <Text style={S.formLabel}>Beløpet gjelder</Text>
                 <View style={S.chips}>
                   {(f.category === "Lønn"
@@ -2890,6 +2939,18 @@ function Form({
                   }
                   style={S.input}
                 />
+                <TextSuggestions
+                  query={f.name || ""}
+                  groups={expenseTypes}
+                  onSelect={({ group, label }) => {
+                    setExpenseGroup(group);
+                    setF((current) => ({
+                      ...current,
+                      name: label,
+                      category: group,
+                    }));
+                  }}
+                />
                 {f.name !== "Boliglån" ? (
                   <>
                     <Text style={S.formLabel}>Kostnaden gjelder</Text>
@@ -2963,6 +3024,11 @@ function Form({
                   onChangeText={(v) => set("name", v)}
                   placeholder="Skriv type forsikring"
                   style={S.input}
+                />
+                <TextSuggestions
+                  query={f.name || ""}
+                  groups={[["Forsikringer", insuranceTypes]]}
+                  onSelect={({ label }) => set("name", label)}
                 />
                 <Text style={S.formLabel}>Forsikringsselskap</Text>
                 <View style={S.suggestionWrap}>
@@ -3280,6 +3346,18 @@ function Form({
                       : "Navn på abonnement"
                   }
                   style={S.input}
+                />
+                <TextSuggestions
+                  query={f.name || ""}
+                  groups={subscriptionTypes}
+                  onSelect={({ group, label }) => {
+                    setSubscriptionGroup(group);
+                    setF((current) => ({
+                      ...current,
+                      name: label,
+                      category: group,
+                    }));
+                  }}
                 />
                 <Text style={S.formLabel}>Betalingsperiode</Text>
                 <View style={S.chips}>
