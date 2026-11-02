@@ -1,166 +1,3805 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
-  Alert, Animated, Image, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform,
-  Linking, Pressable, ScrollView, Text, TextInput, View,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Slider from '@react-native-community/slider';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { Ionicons } from '@expo/vector-icons';
-import { StatusBar } from 'expo-status-bar';
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import {
+  Alert,
+  Animated,
+  Image,
+  ImageBackground,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  PanResponder,
+  Platform,
+  Linking,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Slider from "@react-native-community/slider";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
 
 import {
-  type AppData, type BudgetItem, type BudgetRow, type FormKind, type Goal,
-  type GoalCategory, type Icon, type Insurance, type Insight, type Screen,
-  type Subscription, type Tab, type Period, type InsuredValueUnit, C, K, buildInsights, goalIcon, groupDigits,
-  insIcon, kr, num, seed, subIcon, tabs, uid, dateText, parseDate, migrateAppData, parseStoredAppData,
-} from '../src/overs/model';
-import { S } from '../src/overs/styles';
-const countText=(count:number,singular:string,plural:string)=>`${count} ${count===1?singular:plural}`;
-const goalUsesTarget=(_category:GoalCategory)=>true;
-const goalUsesTargetDate=(category:GoalCategory)=>category==='Sparemål'||category==='Buffer';
-const durationText=(months:number)=>{if(months<12)return `${months} ${months===1?'måned':'måneder'}`;const years=Math.floor(months/12),rest=months%12;const yearText=`${years} ${years===1?'år':'år'}`;return rest?`${yearText} og ${rest} ${rest===1?'måned':'måneder'}`:yearText};
+  type AppData,
+  type BudgetItem,
+  type BudgetRow,
+  type FormKind,
+  type Goal,
+  type GoalCategory,
+  type Icon,
+  type Insurance,
+  type Insight,
+  type Screen,
+  type Subscription,
+  type Tab,
+  type Period,
+  type InsuredValueUnit,
+  C,
+  K,
+  buildInsights,
+  goalIcon,
+  groupDigits,
+  insIcon,
+  kr,
+  num,
+  seed,
+  subIcon,
+  tabs,
+  uid,
+  dateText,
+  parseDate,
+  migrateAppData,
+  parseStoredAppData,
+} from "../src/overs/model";
+import { S } from "../src/overs/styles";
+const countText = (count: number, singular: string, plural: string) =>
+  `${count} ${count === 1 ? singular : plural}`;
+const goalUsesTarget = (_category: GoalCategory) => true;
+const goalUsesTargetDate = (category: GoalCategory) =>
+  category === "Sparemål" || category === "Buffer";
+const durationText = (months: number) => {
+  if (months < 12) return `${months} ${months === 1 ? "måned" : "måneder"}`;
+  const years = Math.floor(months / 12),
+    rest = months % 12;
+  const yearText = `${years} ${years === 1 ? "år" : "år"}`;
+  return rest
+    ? `${yearText} og ${rest} ${rest === 1 ? "måned" : "måneder"}`
+    : yearText;
+};
 
-export default function App(){
-  const[tab,setTab]=useState<Tab>('Oversikt');
-  const[screen,setScreen]=useState<Screen>('Oversikt');
-  const[data,setData]=useState<AppData>(seed);
-  const[ready,setReady]=useState(false);
-  const[form,setForm]=useState<FormKind>(null);
-  const[editId,setEditId]=useState<string|null>(null);
-  const[undo,setUndo]=useState<{data:AppData;label:string}|null>(null);
-  const[aboutOpen,setAboutOpen]=useState(false);
-  const[annualView,setAnnualView]=useState(false);
-  useEffect(()=>{(async()=>{try{const raw=await AsyncStorage.getItem(K);if(raw){const restored=parseStoredAppData(raw);if(restored)setData(restored)}}catch{}finally{setReady(true)}})()},[]);
-  useEffect(()=>{if(ready)AsyncStorage.setItem(K,JSON.stringify(migrateAppData(data))).catch(()=>{})},[data,ready]);
-  useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),5000);return()=>clearTimeout(timer)},[undo]);
-  const budget=useMemo(()=>{const baseRows:BudgetRow[]=[...data.expenses.map(x=>({...x,source:'manual' as const})),...data.insurance.map(x=>({id:`bi-${x.id}`,name:x.type,monthly:x.monthly,category:'Forsikringer',source:'insurance' as const,sourceId:x.id})),...data.subscriptions.map(x=>({id:`bs-${x.id}`,name:x.name,monthly:x.monthly,category:'Abonnement',source:'subscription' as const,sourceId:x.id}))];const rows=[...baseRows].sort((a,b)=>b.monthly-a.monthly);const savingRows:BudgetRow[]=data.goals.filter(x=>x.monthly>0).map(x=>({id:`bg-${x.id}`,name:x.name,monthly:x.monthly,category:x.category,source:'saving' as const,sourceId:x.id})).sort((a,b)=>b.monthly-a.monthly);const income=data.incomes.reduce((a,b)=>a+b.monthly,0);const expense=rows.reduce((a,b)=>a+b.monthly,0);const saving=savingRows.reduce((a,b)=>a+b.monthly,0);return{rows,savingRows,income,expense,saving,left:income-expense-saving}},[data]);
-  const allInsights=useMemo(()=>data.onboardingComplete?buildInsights(data,budget):[],[data,budget]);
-  const insights=useMemo(()=>allInsights.filter(r=>!(data.dismissedInsights||[]).includes(r.id)),[allInsights,data.dismissedInsights]);
-  const dismissInsight=(id:string)=>setData(d=>({...d,dismissedInsights:[...(d.dismissedInsights||[]),id]}));
-  const resetInsights=()=>setData(d=>({...d,dismissedInsights:[]}));
-  const resetAppData=()=>Alert.alert('Nullstill appdata?','Dette sletter alle registrerte data i Overs på denne enheten og starter førstegangsoppsettet på nytt.',[{text:'Avbryt',style:'cancel'},{text:'Nullstill',style:'destructive',onPress:async()=>{await AsyncStorage.removeItem(K);setData(seed);setTab('Oversikt');setScreen('Oversikt');setForm(null);setEditId(null);setUndo(null)}}]);
-  const openAdd=(kind:Exclude<FormKind,null>)=>{setEditId(null);setForm(kind)};
-  const openEdit=(kind:Exclude<FormKind,null>,id:string)=>{setEditId(id);setForm(kind)};
-  const closeForm=()=>{setForm(null);setEditId(null)};
-  const initialForm=useMemo(()=>{if(!form||!editId)return undefined;if(form==='income')return data.incomes.find(x=>x.id===editId);if(form==='expense')return data.expenses.find(x=>x.id===editId);if(form==='insurance')return data.insurance.find(x=>x.id===editId);if(form==='subscription')return data.subscriptions.find(x=>x.id===editId);if(form==='goal')return data.goals.find(x=>x.id===editId);return undefined},[form,editId,data]);
-  const go=(t:Tab)=>{setTab(t);setScreen(t)};
-  const snapshot=(label:string)=>setUndo({data:JSON.parse(JSON.stringify(data)),label});
-  const remove=(kind:'insurance'|'subscription'|'goal',id:string,title:string)=>Alert.alert('Fjern post?',title,[{text:'Avbryt',style:'cancel'},{text:'Fjern',style:'destructive',onPress:()=>{snapshot(title);setData(d=>kind==='insurance'?{...d,insurance:d.insurance.filter(x=>x.id!==id)}:kind==='subscription'?{...d,subscriptions:d.subscriptions.filter(x=>x.id!==id)}:{...d,goals:d.goals.filter(x=>x.id!==id)})}}]);
-  const deleteIncome=(id:string)=>{const item=data.incomes.find(x=>x.id===id);if(!item)return;Alert.alert('Fjern post?',item.category,[{text:'Avbryt',style:'cancel'},{text:'Fjern',style:'destructive',onPress:()=>{snapshot(item.category);setData(d=>({...d,incomes:d.incomes.filter(x=>x.id!==id)}))}}])};
-  const deleteBudget=(row:BudgetRow)=>{if(row.source==='insurance')return remove('insurance',row.sourceId!,row.name);if(row.source==='subscription')return remove('subscription',row.sourceId!,row.name);if(row.source==='saving')return remove('goal',row.sourceId!,row.name);Alert.alert('Fjern post?',row.name,[{text:'Avbryt',style:'cancel'},{text:'Fjern',style:'destructive',onPress:()=>{snapshot(row.name);setData(d=>({...d,expenses:d.expenses.filter(x=>x.id!==row.id)}))}}])};
-  const editIncome=(id:string)=>openEdit('income',id);
-  const editExpense=(row:BudgetRow)=>{if(row.source==='insurance')return openEdit('insurance',row.sourceId!);if(row.source==='subscription')return openEdit('subscription',row.sourceId!);if(row.source==='saving')return openEdit('goal',row.sourceId!);openEdit('expense',row.id)};
-  const saveIncome=(x:Omit<BudgetItem,'id'>)=>{setData(d=>({...d,incomes:editId?d.incomes.map(v=>v.id===editId?{...x,id:editId}:v):[...d.incomes,{...x,id:uid('in')}]}));closeForm()};
-  const saveExpense=(x:Omit<BudgetItem,'id'>)=>{setData(d=>{if(!editId&&x.category==='Forsikringer')return{...d,insurance:[...d.insurance,{id:uid('i'),type:x.name||'Forsikring',provider:x.origin||'Ikke registrert',monthly:x.monthly,registeredAmount:x.registeredAmount??x.monthly,registeredPeriod:x.registeredPeriod??'month',coverage:'',renewal:''}]};if(!editId&&x.category==='Abonnement')return{...d,subscriptions:[...d.subscriptions,{id:uid('s'),name:x.name||'Abonnement',category:'Annet',monthly:x.monthly,renewal:''}]};return{...d,expenses:editId?d.expenses.map(v=>v.id===editId?{...x,id:editId}:v):[...d.expenses,{...x,id:uid('ex')}]}});closeForm()};
-  const saveInsurance=(x:Omit<Insurance,'id'>)=>{setData(d=>({...d,insurance:editId?d.insurance.map(v=>v.id===editId?{...x,id:editId}:v):[...d.insurance,{...x,id:uid('i')}]}));closeForm()};
-  const saveSubscription=(x:Omit<Subscription,'id'>)=>{setData(d=>({...d,subscriptions:editId?d.subscriptions.map(v=>v.id===editId?{...x,id:editId}:v):[...d.subscriptions,{...x,id:uid('s')}]}));closeForm()};
-  const saveGoal=(x:Omit<Goal,'id'>)=>{setData(d=>({...d,goals:editId?d.goals.map(v=>v.id===editId?{...x,id:editId}:v):[...d.goals,{...x,id:uid('g')}]}));closeForm()};
-  return <SafeAreaView style={S.safe}><StatusBar style="dark"/><View style={S.page}><Header title={screen} onReset={resetAppData} onOpenAbout={()=>setAboutOpen(true)}/><ScrollView contentContainerStyle={S.scroll} showsVerticalScrollIndicator={false}>
-    {screen==='Oversikt'&&<Overview annual={annualView} togglePeriod={()=>setAnnualView(v=>!v)} data={data} setData={setData} budget={budget} insights={insights} dismissedCount={(data.dismissedInsights||[]).length} onDismiss={dismissInsight} onReset={resetInsights} openBudget={()=>go('Budsjett')} go={go}/>} 
-    {screen==='Budsjett'&&<BudgetView annual={annualView} togglePeriod={()=>setAnnualView(v=>!v)} data={data} budget={budget} back={()=>setScreen('Oversikt')} addIncome={()=>openAdd('income')} addExpense={()=>openAdd('expense')} go={go} deleteIncome={deleteIncome} deleteExpense={deleteBudget} editIncome={editIncome} editExpense={editExpense}/>} 
-    {screen==='Forsikringer'&&<InsuranceView annual={annualView} togglePeriod={()=>setAnnualView(v=>!v)} items={data.insurance} add={()=>openAdd('insurance')} del={(i,t)=>remove('insurance',i,t)} edit={id=>openEdit('insurance',id)}/>} 
-    {screen==='Sparing'&&<Savings annual={annualView} togglePeriod={()=>setAnnualView(v=>!v)} goals={data.goals} add={()=>openAdd('goal')} del={(i,t)=>remove('goal',i,t)} edit={id=>openEdit('goal',id)} update={(i,n)=>setData(d=>({...d,goals:d.goals.map(g=>g.id===i?{...g,saved:Math.max(0,g.saved+n)}:g)}))}/>} 
-    {screen==='Abonnement'&&<Subscriptions annual={annualView} togglePeriod={()=>setAnnualView(v=>!v)} items={data.subscriptions} add={()=>openAdd('subscription')} del={(i,t)=>remove('subscription',i,t)} edit={id=>openEdit('subscription',id)}/>} 
-  </ScrollView><Nav active={tab} go={go}/><AboutOvers visible={aboutOpen} close={()=>setAboutOpen(false)} onReset={resetAppData}/><Form kind={form} initial={initialForm} editing={!!editId} close={closeForm} saveIncome={saveIncome} saveExpense={saveExpense} saveInsurance={saveInsurance} saveSubscription={saveSubscription} saveGoal={saveGoal}/>{undo&&<View style={S.undoBar}><Text style={S.undoText}>{undo.label} ble slettet</Text><Pressable onPress={()=>{setData(undo.data);setUndo(null)}} style={S.undoButton}><Text style={S.undoButtonText}>Angre</Text></Pressable><Pressable onPress={()=>setUndo(null)}><Ionicons name="close" size={18} color={C.white}/></Pressable></View>}</View></SafeAreaView>
+export default function App() {
+  const [tab, setTab] = useState<Tab>("Oversikt");
+  const [screen, setScreen] = useState<Screen>("Oversikt");
+  const [data, setData] = useState<AppData>(seed);
+  const [ready, setReady] = useState(false);
+  const [form, setForm] = useState<FormKind>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [undo, setUndo] = useState<{ data: AppData; label: string } | null>(
+    null,
+  );
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [annualView, setAnnualView] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(K);
+        if (raw) {
+          const restored = parseStoredAppData(raw);
+          if (restored) setData(restored);
+        }
+      } catch {
+      } finally {
+        setReady(true);
+      }
+    })();
+  }, []);
+  useEffect(() => {
+    if (ready)
+      AsyncStorage.setItem(K, JSON.stringify(migrateAppData(data))).catch(
+        () => {},
+      );
+  }, [data, ready]);
+  useEffect(() => {
+    if (!undo) return;
+    const timer = setTimeout(() => setUndo(null), 5000);
+    return () => clearTimeout(timer);
+  }, [undo]);
+  const budget = useMemo(() => {
+    const baseRows: BudgetRow[] = [
+      ...data.expenses.map((x) => ({ ...x, source: "manual" as const })),
+      ...data.insurance.map((x) => ({
+        id: `bi-${x.id}`,
+        name: x.type,
+        monthly: x.monthly,
+        category: "Forsikringer",
+        source: "insurance" as const,
+        sourceId: x.id,
+      })),
+      ...data.subscriptions.map((x) => ({
+        id: `bs-${x.id}`,
+        name: x.name,
+        monthly: x.monthly,
+        category: "Abonnement",
+        source: "subscription" as const,
+        sourceId: x.id,
+      })),
+    ];
+    const rows = [...baseRows].sort((a, b) => b.monthly - a.monthly);
+    const savingRows: BudgetRow[] = data.goals
+      .filter((x) => x.monthly > 0)
+      .map((x) => ({
+        id: `bg-${x.id}`,
+        name: x.name,
+        monthly: x.monthly,
+        category: x.category,
+        source: "saving" as const,
+        sourceId: x.id,
+      }))
+      .sort((a, b) => b.monthly - a.monthly);
+    const income = data.incomes.reduce((a, b) => a + b.monthly, 0);
+    const expense = rows.reduce((a, b) => a + b.monthly, 0);
+    const saving = savingRows.reduce((a, b) => a + b.monthly, 0);
+    return {
+      rows,
+      savingRows,
+      income,
+      expense,
+      saving,
+      left: income - expense - saving,
+    };
+  }, [data]);
+  const allInsights = useMemo(
+    () => (data.onboardingComplete ? buildInsights(data, budget) : []),
+    [data, budget],
+  );
+  const insights = useMemo(
+    () =>
+      allInsights.filter((r) => !(data.dismissedInsights || []).includes(r.id)),
+    [allInsights, data.dismissedInsights],
+  );
+  const dismissInsight = (id: string) =>
+    setData((d) => ({
+      ...d,
+      dismissedInsights: [...(d.dismissedInsights || []), id],
+    }));
+  const resetInsights = () => setData((d) => ({ ...d, dismissedInsights: [] }));
+  const resetAppData = () =>
+    Alert.alert(
+      "Nullstill appdata?",
+      "Dette sletter alle registrerte data i Overs på denne enheten og starter førstegangsoppsettet på nytt.",
+      [
+        { text: "Avbryt", style: "cancel" },
+        {
+          text: "Nullstill",
+          style: "destructive",
+          onPress: async () => {
+            await AsyncStorage.removeItem(K);
+            setData(seed);
+            setTab("Oversikt");
+            setScreen("Oversikt");
+            setForm(null);
+            setEditId(null);
+            setUndo(null);
+          },
+        },
+      ],
+    );
+  const openAdd = (kind: Exclude<FormKind, null>) => {
+    setEditId(null);
+    setForm(kind);
+  };
+  const openEdit = (kind: Exclude<FormKind, null>, id: string) => {
+    setEditId(id);
+    setForm(kind);
+  };
+  const closeForm = () => {
+    setForm(null);
+    setEditId(null);
+  };
+  const initialForm = useMemo(() => {
+    if (!form || !editId) return undefined;
+    if (form === "income") return data.incomes.find((x) => x.id === editId);
+    if (form === "expense") return data.expenses.find((x) => x.id === editId);
+    if (form === "insurance")
+      return data.insurance.find((x) => x.id === editId);
+    if (form === "subscription")
+      return data.subscriptions.find((x) => x.id === editId);
+    if (form === "goal") return data.goals.find((x) => x.id === editId);
+    return undefined;
+  }, [form, editId, data]);
+  const go = (t: Tab) => {
+    setTab(t);
+    setScreen(t);
+  };
+  const snapshot = (label: string) =>
+    setUndo({ data: JSON.parse(JSON.stringify(data)), label });
+  const remove = (
+    kind: "insurance" | "subscription" | "goal",
+    id: string,
+    title: string,
+  ) =>
+    Alert.alert("Fjern post?", title, [
+      { text: "Avbryt", style: "cancel" },
+      {
+        text: "Fjern",
+        style: "destructive",
+        onPress: () => {
+          snapshot(title);
+          setData((d) =>
+            kind === "insurance"
+              ? { ...d, insurance: d.insurance.filter((x) => x.id !== id) }
+              : kind === "subscription"
+                ? {
+                    ...d,
+                    subscriptions: d.subscriptions.filter((x) => x.id !== id),
+                  }
+                : { ...d, goals: d.goals.filter((x) => x.id !== id) },
+          );
+        },
+      },
+    ]);
+  const deleteIncome = (id: string) => {
+    const item = data.incomes.find((x) => x.id === id);
+    if (!item) return;
+    Alert.alert("Fjern post?", item.category, [
+      { text: "Avbryt", style: "cancel" },
+      {
+        text: "Fjern",
+        style: "destructive",
+        onPress: () => {
+          snapshot(item.category);
+          setData((d) => ({
+            ...d,
+            incomes: d.incomes.filter((x) => x.id !== id),
+          }));
+        },
+      },
+    ]);
+  };
+  const deleteBudget = (row: BudgetRow) => {
+    if (row.source === "insurance")
+      return remove("insurance", row.sourceId!, row.name);
+    if (row.source === "subscription")
+      return remove("subscription", row.sourceId!, row.name);
+    if (row.source === "saving") return remove("goal", row.sourceId!, row.name);
+    Alert.alert("Fjern post?", row.name, [
+      { text: "Avbryt", style: "cancel" },
+      {
+        text: "Fjern",
+        style: "destructive",
+        onPress: () => {
+          snapshot(row.name);
+          setData((d) => ({
+            ...d,
+            expenses: d.expenses.filter((x) => x.id !== row.id),
+          }));
+        },
+      },
+    ]);
+  };
+  const editIncome = (id: string) => openEdit("income", id);
+  const editExpense = (row: BudgetRow) => {
+    if (row.source === "insurance") return openEdit("insurance", row.sourceId!);
+    if (row.source === "subscription")
+      return openEdit("subscription", row.sourceId!);
+    if (row.source === "saving") return openEdit("goal", row.sourceId!);
+    openEdit("expense", row.id);
+  };
+  const saveIncome = (x: Omit<BudgetItem, "id">) => {
+    setData((d) => ({
+      ...d,
+      incomes: editId
+        ? d.incomes.map((v) => (v.id === editId ? { ...x, id: editId } : v))
+        : [...d.incomes, { ...x, id: uid("in") }],
+    }));
+    closeForm();
+  };
+  const saveExpense = (x: Omit<BudgetItem, "id">) => {
+    setData((d) => {
+      if (!editId && x.category === "Forsikringer")
+        return {
+          ...d,
+          insurance: [
+            ...d.insurance,
+            {
+              id: uid("i"),
+              type: x.name || "Forsikring",
+              provider: x.origin || "Ikke registrert",
+              monthly: x.monthly,
+              registeredAmount: x.registeredAmount ?? x.monthly,
+              registeredPeriod: x.registeredPeriod ?? "month",
+              coverage: "",
+              renewal: "",
+            },
+          ],
+        };
+      if (!editId && x.category === "Abonnement")
+        return {
+          ...d,
+          subscriptions: [
+            ...d.subscriptions,
+            {
+              id: uid("s"),
+              name: x.name || "Abonnement",
+              category: "Annet",
+              monthly: x.monthly,
+              renewal: "",
+            },
+          ],
+        };
+      return {
+        ...d,
+        expenses: editId
+          ? d.expenses.map((v) => (v.id === editId ? { ...x, id: editId } : v))
+          : [...d.expenses, { ...x, id: uid("ex") }],
+      };
+    });
+    closeForm();
+  };
+  const saveInsurance = (x: Omit<Insurance, "id">) => {
+    setData((d) => ({
+      ...d,
+      insurance: editId
+        ? d.insurance.map((v) => (v.id === editId ? { ...x, id: editId } : v))
+        : [...d.insurance, { ...x, id: uid("i") }],
+    }));
+    closeForm();
+  };
+  const saveSubscription = (x: Omit<Subscription, "id">) => {
+    setData((d) => ({
+      ...d,
+      subscriptions: editId
+        ? d.subscriptions.map((v) =>
+            v.id === editId ? { ...x, id: editId } : v,
+          )
+        : [...d.subscriptions, { ...x, id: uid("s") }],
+    }));
+    closeForm();
+  };
+  const saveGoal = (x: Omit<Goal, "id">) => {
+    setData((d) => ({
+      ...d,
+      goals: editId
+        ? d.goals.map((v) => (v.id === editId ? { ...x, id: editId } : v))
+        : [...d.goals, { ...x, id: uid("g") }],
+    }));
+    closeForm();
+  };
+  return (
+    <SafeAreaView style={S.safe}>
+      <StatusBar style="dark" />
+      <View style={S.page}>
+        <Header
+          title={screen}
+          onReset={resetAppData}
+          onOpenAbout={() => setAboutOpen(true)}
+        />
+        <ScrollView
+          contentContainerStyle={S.scroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {screen === "Oversikt" && (
+            <Overview
+              annual={annualView}
+              togglePeriod={() => setAnnualView((v) => !v)}
+              data={data}
+              setData={setData}
+              budget={budget}
+              insights={insights}
+              dismissedCount={(data.dismissedInsights || []).length}
+              onDismiss={dismissInsight}
+              onReset={resetInsights}
+              openBudget={() => go("Budsjett")}
+              go={go}
+            />
+          )}
+          {screen === "Budsjett" && (
+            <BudgetView
+              annual={annualView}
+              togglePeriod={() => setAnnualView((v) => !v)}
+              data={data}
+              budget={budget}
+              back={() => setScreen("Oversikt")}
+              addIncome={() => openAdd("income")}
+              addExpense={() => openAdd("expense")}
+              go={go}
+              deleteIncome={deleteIncome}
+              deleteExpense={deleteBudget}
+              editIncome={editIncome}
+              editExpense={editExpense}
+            />
+          )}
+          {screen === "Forsikringer" && (
+            <InsuranceView
+              annual={annualView}
+              togglePeriod={() => setAnnualView((v) => !v)}
+              items={data.insurance}
+              add={() => openAdd("insurance")}
+              del={(i, t) => remove("insurance", i, t)}
+              edit={(id) => openEdit("insurance", id)}
+            />
+          )}
+          {screen === "Sparing" && (
+            <Savings
+              annual={annualView}
+              togglePeriod={() => setAnnualView((v) => !v)}
+              goals={data.goals}
+              add={() => openAdd("goal")}
+              del={(i, t) => remove("goal", i, t)}
+              edit={(id) => openEdit("goal", id)}
+              update={(i, n) =>
+                setData((d) => ({
+                  ...d,
+                  goals: d.goals.map((g) =>
+                    g.id === i ? { ...g, saved: Math.max(0, g.saved + n) } : g,
+                  ),
+                }))
+              }
+            />
+          )}
+          {screen === "Abonnement" && (
+            <Subscriptions
+              annual={annualView}
+              togglePeriod={() => setAnnualView((v) => !v)}
+              items={data.subscriptions}
+              add={() => openAdd("subscription")}
+              del={(i, t) => remove("subscription", i, t)}
+              edit={(id) => openEdit("subscription", id)}
+            />
+          )}
+        </ScrollView>
+        <Nav active={tab} go={go} />
+        <AboutOvers
+          visible={aboutOpen}
+          close={() => setAboutOpen(false)}
+          onReset={resetAppData}
+        />
+        <Form
+          kind={form}
+          initial={initialForm}
+          editing={!!editId}
+          close={closeForm}
+          saveIncome={saveIncome}
+          saveExpense={saveExpense}
+          saveInsurance={saveInsurance}
+          saveSubscription={saveSubscription}
+          saveGoal={saveGoal}
+        />
+        {undo && (
+          <View style={S.undoBar}>
+            <Text style={S.undoText}>{undo.label} ble slettet</Text>
+            <Pressable
+              onPress={() => {
+                setData(undo.data);
+                setUndo(null);
+              }}
+              style={S.undoButton}
+            >
+              <Text style={S.undoButtonText}>Angre</Text>
+            </Pressable>
+            <Pressable onPress={() => setUndo(null)}>
+              <Ionicons name="close" size={18} color={C.white} />
+            </Pressable>
+          </View>
+        )}
+      </View>
+    </SafeAreaView>
+  );
 }
 
-function PeriodControl({annual,toggle}:{annual:boolean;toggle:()=>void}){return <Pressable onPress={toggle} accessibilityRole="button" accessibilityLabel="Bytt mellom måned og år" style={S.inlinePeriod}><Text style={[S.inlinePeriodText,!annual&&S.inlinePeriodActive]}>mnd</Text><Text style={S.inlinePeriodSlash}>/</Text><Text style={[S.inlinePeriodText,annual&&S.inlinePeriodActive]}>år</Text></Pressable>}
-function Header({title,onReset,onOpenAbout}:{title:string;onReset:()=>void;onOpenAbout:()=>void}){return <View style={S.header}><View style={S.brandTitle}><Image source={require('../assets/images/icon.png')} style={S.headerLogo}/><Text style={S.title}>{title}</Text></View><Pressable onPress={onOpenAbout} onLongPress={onReset} delayLongPress={7000} accessibilityRole="button" accessibilityLabel="Person og innstillinger" accessibilityHint="Åpner Om Overs. Hold inne i sju sekunder for nullstilling av appdata" style={S.avatar}><Ionicons name="people" size={20} color={C.green}/></Pressable></View>}
-function AboutOvers({visible,close,onReset}:{visible:boolean;close:()=>void;onReset:()=>void}){return <Modal visible={visible} transparent animationType="slide" onRequestClose={close}><View style={S.aboutRoot}><Pressable style={S.backdrop} onPress={close}/><View style={S.aboutSheet}><View style={S.modalHead}><View><Text style={S.greenKicker}>OM OVERS</Text><Text style={S.modalTitle}>Overs</Text></View><Pressable onPress={close} accessibilityRole="button" accessibilityLabel="Lukk" style={S.closeCircle}><Ionicons name="close" size={22} color={C.ink}/></Pressable></View><ScrollView showsVerticalScrollIndicator={false}><View style={S.aboutSection}><Text style={S.aboutTitle}>Økonomisk oversikt</Text><Text style={S.aboutText}>Overs hjelper deg å samle og strukturere opplysninger om inntekter, utgifter, sparing, forsikringer og abonnement. Overs gir økonomisk oversikt, ikke økonomiske anbefalinger.</Text></View><View style={S.aboutSection}><Text style={S.aboutTitle}>Personvern og lagring</Text><Text style={S.aboutText}>Økonomiske opplysninger du registrerer i denne versjonen lagres lokalt i appens lagring på enheten. Overs har foreløpig ingen konto- eller familiesynkronisering. Sletting av appdata fjerner de registrerte opplysningene fra Overs på denne enheten.</Text></View><View style={S.aboutSection}><Text style={S.aboutTitle}>Appversjon</Text><Text style={S.aboutText}>Overs 0.1.0</Text></View><Pressable onPress={()=>Linking.openURL("https://grevelen.github.io/oversiktsapp/privacy-policy.html")} accessibilityRole="link" accessibilityLabel="Les personvernerklæringen" style={S.aboutPrivacyNote}><Ionicons name="shield-checkmark-outline" size={19} color={C.green}/><View style={S.flex}><Text style={S.aboutPrivacyNoteText}>Les personvernerklæringen</Text><Text style={S.aboutPrivacyLinkText}>grevelen.github.io/oversiktsapp</Text></View><Ionicons name="open-outline" size={17} color={C.green}/></Pressable><Pressable onPress={()=>{close();onReset()}} accessibilityRole="button" style={S.aboutReset}><Ionicons name="trash-outline" size={18} color={C.red}/><Text style={S.aboutResetText}>Nullstill appdata</Text></Pressable></ScrollView></View></View></Modal>}
-function Overview({annual,togglePeriod,data,setData,budget,insights,dismissedCount,onDismiss,onReset,openBudget,go}:{annual:boolean;togglePeriod:()=>void;data:AppData;setData:Dispatch<SetStateAction<AppData>>;budget:{income:number;expense:number;saving:number;left:number};insights:Insight[];dismissedCount:number;onDismiss:(id:string)=>void;onReset:()=>void;openBudget:()=>void;go:(t:Tab)=>void}){
- const[all,setAll]=useState(false);const first=insights.length?insights[0]:null;const shown=all?insights.slice(1):[];
- const skipped=data.skippedSetup||[];const setup=[{id:'income',label:'Legg til en inntekt',detail:'Start med det som kommer inn hver måned.',done:data.incomes.length>0,target:'Budsjett' as Tab},{id:'expense',label:'Legg til en utgift',detail:'Registrer en fast eller variabel utgift.',done:data.expenses.length>0,target:'Budsjett' as Tab},{id:'insurance',label:'Legg til en forsikring',detail:'Registrer en forsikring. Resten kan legges til senere.',done:data.insurance.length>0,target:'Forsikringer' as Tab},{id:'subscription',label:'Legg til et abonnement',detail:'Registrer en løpende tjeneste eller et medlemskap.',done:data.subscriptions.length>0,target:'Abonnement' as Tab},{id:'goal',label:'Opprett et sparemål',detail:'Lag et sparemål eller en buffer.',done:data.goals.length>0,target:'Sparing' as Tab}].map(x=>({...x,skipped:skipped.includes(x.id)}));const setupDone=setup.filter(x=>x.done||x.skipped).length;const setupReady=setupDone===setup.length;const skipStep=(id:string)=>setData(d=>({...d,skippedSetup:[...new Set([...(d.skippedSetup||[]),id])]}));
- if(!data.onboardingComplete)return <><View style={S.pitch}><Text style={S.greenKicker}>KOM I GANG</Text><Text style={S.pitchTitle}>Bygg oversikten din</Text><Text style={S.small}>{setupDone} av {setup.length} registrert.</Text><Text style={S.small}>Når grunnlaget er lagt inn bidrar Overs til å gi deg økonomisk oversikt.</Text></View>{setup.map((x,i)=><View key={x.id} style={S.onboardingRow}><Pressable onPress={()=>go(x.target)} style={S.onboardingMain}><View style={[S.onboardingNumber,(x.done||x.skipped)&&S.onboardingDone]}>{x.done?<Ionicons name="checkmark" size={18} color={C.white}/>:x.skipped?<Ionicons name="play-skip-forward-outline" size={16} color={C.white}/>:<Text style={S.onboardingNumberText}>{i+1}</Text>}</View><View style={S.flex}><Text style={S.cardTitle}>{x.label}</Text><Text style={S.cardSub}>{x.skipped?'Hoppet over for nå. Kan legges til senere.':x.detail}</Text></View><Ionicons name="chevron-forward" size={18} color={C.green}/></Pressable>{!x.done&&!x.skipped?<Pressable onPress={()=>skipStep(x.id)} accessibilityRole="button" style={S.skipSetupButton}><Text style={S.skipSetupText}>Hopp over for nå</Text></Pressable>:null}</View>)}{setupReady?<View style={S.onboardingReview}><Text style={S.pitchTitle}>Godt jobbet med første steg</Text><Text style={S.small}>{setup.some(x=>x.skipped)?'Du kan legge til resten når det passer. Du er nå godt i gang på vei mot bedre økonomisk oversikt.':'Du er nå godt i gang på vei mot bedre økonomisk oversikt.'}</Text><Pressable onPress={()=>setData(d=>({...d,onboardingComplete:true,dismissedInsights:[]}))} style={S.primary}><Text style={S.primaryText}>Fortsett</Text></Pressable></View>:null}</>;
- return <><OverviewHero budget={budget} openBudget={openBudget} annual={annual} togglePeriod={togglePeriod}/>{first?<><View key={first.id} style={S.pitch}><View style={S.insightMain}><View style={S.icon}><Ionicons name={first.icon} size={23} color={C.green}/></View><View style={S.flex}><View style={S.insightHeadingRow}><Text style={S.greenKicker}>ØKONOMISK INNSIKT</Text><Text style={S.insightKind}>{first.kind==='action'?'HANDLING':first.kind==='positive'?'POSITIVT':'OBSERVASJON'}</Text></View><Text style={S.pitchTitle}>{first.title}</Text><Text style={S.small}>{first.detail}</Text></View></View><View style={S.insightFooter}>{first.id==='budget-surplus'?<Pressable onPress={()=>onDismiss(first.id)} style={S.surplusDoneButton}><Ionicons name="checkmark-circle-outline" size={18} color={C.white}/><Text style={S.surplusDoneButtonText}>Topp</Text></Pressable>:<><Pressable onPress={()=>go(first.target)} style={S.insightOpenAction}><Text style={S.insightOpenActionText}>Åpne oversikt</Text><Ionicons name="chevron-forward" size={15} color={C.green}/></Pressable><Pressable onPress={()=>onDismiss(first.id)} style={S.reviewedButton}><Ionicons name="checkmark-circle-outline" size={18} color={C.green}/><Text style={S.reviewedButtonText}>Gjennomgått</Text></Pressable></>}</View></View>{insights.length>1?<Pressable onPress={()=>setAll(v=>!v)} style={S.showInsights}><Text style={S.showInsightsText}>{all?'Skjul innsikter':`Se ${insights.length-1} flere innsikter`}</Text><Ionicons name={all?'chevron-up':'chevron-down'} size={17} color={C.green}/></Pressable>:null}{shown.length?<View style={S.insightList}>{shown.map((r,i)=><View key={r.id} style={S.insightRow}><Pressable onPress={()=>go(r.target)} style={S.insightRowMain}><View style={S.insightNumber}><Text style={S.insightNumberText}>{i+2}</Text></View><View style={S.flex}><View style={S.insightHeadingRow}><Text style={S.cardTitle}>{r.title}</Text><Text style={S.insightKind}>{r.kind==='action'?'HANDLING':r.kind==='positive'?'POSITIVT':'OBSERVASJON'}</Text></View><Text style={S.cardSub}>{r.detail}</Text></View><Ionicons name="chevron-forward" size={17} color={C.green}/></Pressable><View style={S.insightRowFooter}><Pressable onPress={()=>onDismiss(r.id)} style={S.rowDone}><Ionicons name="checkmark" size={16} color={C.green}/><Text style={S.rowDoneText}>Gjennomgått</Text></Pressable></View></View>)}</View>:null}</>:<View style={S.insightComplete}><View style={S.insightCompleteIcon}><Ionicons name="leaf-outline" size={24} color={C.green}/></View><Text style={S.insightCompleteTitle}>God oversikt</Text><Text style={S.insightCompleteText}>Du har gått gjennom innsiktene. Oppdater Overs når økonomien endrer seg.</Text></View>}{dismissedCount>0?<Pressable onPress={onReset} style={S.revisitInsights}><Ionicons name="refresh-outline" size={16} color={C.green}/><Text style={S.revisitText}>Vis innsiktene på nytt</Text></Pressable>:null}<Section title="Økonomien din"/><View style={S.monthGrid}><MonthMetric icon="wallet-outline" label="Til overs" value={kr(budget.left)}/><MonthMetric icon="flag-outline" label="Sparing" value={kr(budget.saving)}/><MonthMetric icon="shield-checkmark-outline" label="Forsikringer" value={kr(data.insurance.reduce((a,b)=>a+b.monthly,0))}/><MonthMetric icon="repeat-outline" label="Abonnement" value={kr(data.subscriptions.reduce((a,b)=>a+b.monthly,0))}/></View></>}
-
-function OverviewHero({budget,openBudget,annual,togglePeriod}:{budget:{income:number;expense:number;saving:number;left:number};openBudget:()=>void;annual:boolean;togglePeriod:()=>void}){const mult=annual?12:1;return <Pressable onPress={openBudget} style={[S.hero,budget.left<0&&S.heroNegative]}><View style={S.inlinePeriodRow}><Text style={S.heroLabel}>{budget.left<0?'Minus':'Penger til overs'}</Text><PeriodControl annual={annual} toggle={togglePeriod}/></View><Text style={S.heroAmount}>{kr(Math.round(budget.left*mult))}</Text><View style={S.row}><Stat l="Inntekter" v={kr(Math.round(budget.income*mult))}/><Stat l="Utgifter" v={kr(Math.round(budget.expense*mult))}/><Stat l="Sparing" v={kr(Math.round(budget.saving*mult))}/></View><View style={S.heroLink}><Text style={S.heroLinkText}>Åpne budsjett</Text><Ionicons name="chevron-forward" size={18} color="#D9E8E2"/></View></Pressable>}
-function BudgetView({annual,togglePeriod,data,budget,back,addIncome,addExpense,go,deleteIncome,deleteExpense,editIncome,editExpense}:{annual:boolean;togglePeriod:()=>void;data:AppData;budget:{rows:BudgetRow[];savingRows:BudgetRow[];income:number;expense:number;saving:number;left:number};back:()=>void;addIncome:()=>void;addExpense:()=>void;go:(t:Tab)=>void;deleteIncome:(id:string)=>void;deleteExpense:(row:BudgetRow)=>void;editIncome:(id:string)=>void;editExpense:(row:BudgetRow)=>void}){
-  const[open,setOpen]=useState<'income'|'expense'|'saving'|null>(null);const[selected,setSelected]=useState<{title:string;category:string;monthly:number;details:{label:string;value:string}[]}|null>(null);const[detailAnnual,setDetailAnnual]=useState(false);
-  return <>
-    <BudgetHero label="INNTEKTER" value={budget.income} annual={annual} togglePeriod={togglePeriod} detail={countText(data.incomes.length,'registrert inntekt','registrerte inntekter')} color={C.dark} open={open==='income'} onPress={()=>setOpen(open==='income'?null:'income')} onAdd={open==='income'?addIncome:undefined}/>
-    {open==='income'?<BudgetGroups annual={annual} rows={data.incomes.map(x=>({id:x.id,name:x.origin&&x.origin!=='Ikke oppgitt'?x.origin:x.category,category:x.category,monthly:x.monthly,icon:'arrow-down-circle-outline' as Icon,onPress:()=>setSelected({title:x.category,category:x.origin&&x.origin!=='Ikke oppgitt'?x.origin:'Inntekt',monthly:x.monthly,details:[]}),onEdit:()=>editIncome(x.id),onDelete:()=>deleteIncome(x.id)}))}/>:null}
-    <BudgetHero label="UTGIFTER" value={budget.expense} annual={annual} detail={countText(budget.rows.length,'registrert utgift','registrerte utgifter')} color={C.red} open={open==='expense'} onPress={()=>setOpen(open==='expense'?null:'expense')} onAdd={open==='expense'?addExpense:undefined}/>
-    {open==='expense'?<BudgetGroups annual={annual} rows={budget.rows.map(x=>({id:x.id,name:x.name,category:x.source==='manual'?x.category:x.category,monthly:x.monthly,icon:(x.source==='insurance'?'shield-checkmark-outline':x.source==='subscription'?'repeat-outline':'card-outline') as Icon,onPress:x.source==='insurance'?()=>go('Forsikringer'):x.source==='subscription'?()=>go('Abonnement'):()=>{const e=data.expenses.find(v=>v.id===x.id);setSelected({title:x.name,category:x.category,monthly:x.monthly,details:[...(e?.interest?[{label:'Renter',value:kr(e.interest)}]:[]),...(e?.principal?[{label:'Avdrag',value:kr(e.principal)}]:[])]})},onEdit:()=>editExpense(x),onDelete:()=>deleteExpense(x)}))}/>:null}
-    <BudgetHero label="SPARING" value={budget.saving} annual={annual} detail={countText(budget.savingRows.length,'fast sparepost','faste spareposter')} color="#365F8D" open={open==='saving'} onPress={()=>setOpen(open==='saving'?null:'saving')} onAdd={open==='saving'?()=>go('Sparing'):undefined}/>
-    {open==='saving'?<BudgetGroups annual={annual} rows={budget.savingRows.map(x=>({id:x.id,name:x.name,category:x.category,monthly:x.monthly,icon:'flag-outline' as Icon,onPress:()=>go('Sparing'),onEdit:()=>editExpense(x),onDelete:()=>deleteExpense(x)}))}/>:null}
-    <BudgetHero label="PENGER TIL OVERS" value={budget.left} annual={annual} detail="Inntekter − utgifter − fast sparing" color={budget.left>=0?C.dark:C.red} open={false}/>
-    
-    <BudgetDetail selected={selected} close={()=>setSelected(null)} annual={detailAnnual} toggle={()=>setDetailAnnual(v=>!v)}/><View style={S.yearRow}><Text style={S.yearLabel}>Årlig inntekt</Text><Text style={S.yearValue}>{kr(budget.income*12)}</Text><Text style={S.yearLabel}>Årlige utgifter</Text><Text style={S.yearValue}>{kr(budget.expense*12)}</Text><Text style={S.yearLabel}>Årlig sparing</Text><Text style={S.yearValue}>{kr(budget.saving*12)}</Text></View>
-  </>;
-}
-function BudgetHero({label,value,detail,color,open,onPress,onAdd,annual,togglePeriod}:{label:string;value:number;detail:string;color:string;open:boolean;onPress?:()=>void;onAdd?:()=>void;annual:boolean;togglePeriod?:()=>void}){return <Pressable onPress={onPress} style={[S.budgetHero,{backgroundColor:color}]}><View style={S.flex}><View style={S.inlinePeriodRow}><Text style={S.budgetHeroLabel}>{label}</Text>{togglePeriod?<PeriodControl annual={annual} toggle={togglePeriod}/>:<Text style={S.inlinePeriodStatic}>/{annual?'år':'mnd'}</Text>}</View><Text style={S.budgetHeroValue}>{kr(Math.round(value*(annual?12:1)))}</Text><Text style={S.budgetHeroDetail}>{detail}</Text></View><View style={S.budgetHeroActions}>{onAdd?<Pressable onPress={e=>{e.stopPropagation();onAdd()}} style={S.heroAddButton}><Ionicons name="add" size={28} color={C.white}/></Pressable>:null}{onPress?<Ionicons name={open?'chevron-up':'chevron-down'} size={22} color="#EFE8DD"/>:null}</View></Pressable>}
-type BudgetGroupRow={id:string;name:string;category:string;monthly:number;icon:Icon;onPress:()=>void;onEdit:()=>void;onDelete:()=>void};
-function BudgetGroups({rows,annual}:{rows:BudgetGroupRow[];annual:boolean}){const mult=annual?12:1;const totals=new Map<string,number>();rows.forEach(x=>totals.set(x.category,(totals.get(x.category)||0)+x.monthly));const groups=[...totals.keys()].sort((a,b)=>(totals.get(b)||0)-(totals.get(a)||0)||a.localeCompare(b,'nb'));return <View style={S.accordion}>{groups.map(category=>{const items=rows.filter(x=>x.category===category).sort((a,b)=>b.monthly-a.monthly);const total=totals.get(category)||0;return <View key={category} style={S.budgetGroup}><View style={S.budgetGroupHead}><Text style={S.budgetGroupTitle}>{category}</Text><Text style={S.budgetGroupTotal}>{kr(Math.round(total*mult))}/{annual?'år':'mnd'}</Text></View>{items.map(x=><GestureBudgetLine key={x.id} icon={x.icon} name={x.name} sub={items.length>1?category:''} value={x.monthly*mult} period={annual?'år':'mnd'} onPress={x.onPress} onEdit={x.onEdit} onDelete={x.onDelete}/>)}</View>})}</View>}
-function GestureBudgetLine({icon,name,sub,value,period='mnd',onPress,onEdit,onDelete}:{icon:Icon;name:string;sub:string;value:number;period?:'mnd'|'år';onPress:()=>void;onEdit:()=>void;onDelete:()=>void}){
-  const x=useRef(new Animated.Value(0)).current;const[openSide,setOpenSide]=useState<'edit'|'delete'|null>(null);
-  const close=()=>{setOpenSide(null);Animated.spring(x,{toValue:0,useNativeDriver:true}).start()};
-  const pan=useRef(PanResponder.create({onMoveShouldSetPanResponder:(_,g)=>Math.abs(g.dx)>12,onPanResponderMove:(_,g)=>x.setValue(Math.max(-105,Math.min(105,g.dx))),onPanResponderRelease:(_,g)=>{if(g.dx>45){setOpenSide('edit');Animated.spring(x,{toValue:96,useNativeDriver:true}).start()}else if(g.dx<-45){setOpenSide('delete');Animated.spring(x,{toValue:-96,useNativeDriver:true}).start()}else close()}})).current;
-  const runEdit=()=>{close();onEdit()};const runDelete=()=>{close();onDelete()};
-  return <View style={S.gestureWrap}><Pressable onPress={runEdit} style={S.swipeEdit}><Text style={S.swipeActionText}>Rediger</Text></Pressable><Pressable onPress={runDelete} style={S.swipeDelete}><Text style={S.swipeActionText}>Slett</Text></Pressable><Animated.View {...pan.panHandlers} style={{transform:[{translateX:x}]}}><Pressable onPress={openSide?close:onPress} style={[S.budgetLine,S.swipeForeground]}><View style={S.smallIcon}><Ionicons name={icon} size={19} color={C.green}/></View><View style={S.flex}><Text style={S.cardTitle}>{name}</Text>{sub?<Text style={S.cardSub}>{sub}</Text>:null}</View><View style={S.right}><Text style={S.value}>{kr(value)}</Text><Text style={S.per}>per mnd</Text></View><Ionicons name="chevron-forward" size={18} color={C.green}/></Pressable></Animated.View></View>}
-function InsuranceView({annual,togglePeriod,items,add,del,edit}:{annual:boolean;togglePeriod:()=>void;items:Insurance[];add:()=>void;del:(i:string,t:string)=>void;edit:(id:string)=>void}){
-  const[selected,setSelected]=useState<Insurance|null>(null);const[sort,setSort]=useState<SortMode>('cost-desc');
-  return <>
-    <Summary annual={annual} togglePeriod={togglePeriod} k="SAMLET FORSIKRING" a={kr(items.reduce((a,b)=>a+b.monthly,0))+'/mnd'} d={countText(items.length,'registrert avtale','registrerte avtaler')}/>
-    <Section title="Mine forsikringer" action="Legg til" onPress={add}/><SortControl value={sort} setValue={setSort}/>
-    {[...items].sort((a,b)=>sort==='category-asc'?a.type.localeCompare(b.type,'nb'):sort==='category-desc'?b.type.localeCompare(a.type,'nb'):sort==='cost-asc'?a.monthly-b.monthly:b.monthly-a.monthly).map(x=><GestureBudgetLine key={x.id} icon={insIcon(x.type)} name={x.type} sub={`${x.provider}${x.note?` • ${x.note}`:''}`} value={x.monthly*(annual?12:1)} period={annual?'år':'mnd'} onPress={()=>setSelected(x)} onEdit={()=>edit(x.id)} onDelete={()=>del(x.id,x.type)}/>)}
-    <Modal visible={selected!==null} transparent animationType="fade" statusBarTranslucent onRequestClose={()=>setSelected(null)}>
-      <View style={S.insuranceModalRoot}>
-        <Pressable style={S.insuranceModalBackdrop} onPress={()=>setSelected(null)}/>
-        {selected?<View style={S.insuranceModalCard}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.insuranceModalContent}>
-            <View style={S.modalHead}>
-              <View style={S.flex}><Text style={S.greenKicker}>FORSIKRING</Text><Text style={S.modalTitle}>{selected.type}</Text></View>
-              <Pressable onPress={()=>setSelected(null)} accessibilityRole="button" accessibilityLabel="Lukk" style={S.closeCircle}><Ionicons name="close" size={22} color={C.ink}/></Pressable>
-            </View>
-            <View style={S.insProviderRow}><View style={S.insProviderIcon}><Ionicons name={insIcon(selected.type)} size={22} color={C.green}/></View><View><Text style={S.insEyebrow}>SELSKAP</Text><Text style={S.insProvider}>{selected.provider}</Text></View></View><View style={S.insPricePanel}><View><Text style={S.insEyebrow}>NORMALISERT PRIS</Text><Text style={S.insPrice}>{kr(selected.monthly)}<Text style={S.insPriceUnit}>/mnd</Text></Text></View><View style={S.insAnnual}><Text style={S.insAnnualLabel}>Per år</Text><Text style={S.insAnnualValue}>{kr(selected.monthly*12)}</Text></View></View><View style={S.insSection}><Text style={S.insSectionTitle}>Premie</Text><InsuranceFact label="Registrert beløp" value={`${kr(selected.registeredAmount??selected.monthly)} • ${(selected.registeredPeriod??'month')==='year'?'per år':(selected.registeredPeriod??'month')==='quarter'?'per kvartal':'per måned'}`}/></View><View style={S.insSection}><Text style={S.insSectionTitle}>Avtalen</Text><InsuranceFact label="Dekning" value={selected.coverage||selected.coverageType||'Ikke registrert'}/><InsuranceFact label="Fornyelse" value={selected.expiryDate||selected.renewal||'Ikke registrert'}/><InsuranceFact label="Egenandel" value={selected.deductible||'Ikke registrert'}/></View><View style={S.insSection}><Text style={S.insSectionTitle}>Notat</Text><Text style={S.insNoteText}>{selected.note||'Ikke registrert'}</Text></View><View style={S.insSection}><Text style={S.insSectionTitle}>Flere detaljer</Text><InsuranceFact label="Bonus" value={selected.bonus||'Ikke registrert'}/><InsuranceFact label="Forsikringssum" value={selected.insuredValue?`${selected.insuredValue} ${selected.insuredValueUnit==='G'?'G':'kr'}`:'Ikke registrert'}/><InsuranceFact label="Tegningsdato" value={selected.startDate||'Ikke registrert'}/></View><View style={S.insBudgetTag}><Ionicons name="checkmark-circle" size={17} color={C.green}/><Text style={S.insBudgetTagText}>Lagt til i budsjett</Text></View><View style={S.popupActions}><Pressable onPress={()=>{const id=selected.id;setSelected(null);edit(id)}} accessibilityRole="button" accessibilityLabel="Rediger" style={S.insEditAction}><Ionicons name="pencil-outline" size={18} color={C.green}/><Text style={S.insEditActionText}>Rediger</Text></Pressable><Pressable onPress={()=>{const current=selected;setSelected(null);del(current.id,current.type)}} accessibilityRole="button" accessibilityLabel="Slett" style={S.insDeleteAction}><Ionicons name="trash-outline" size={20} color={C.red}/></Pressable></View>
-          </ScrollView>
-        </View>:null}
+function IntroCelebration({
+  visible,
+  onContinue,
+}: {
+  visible: boolean;
+  onContinue: () => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onContinue}
+    >
+      <View style={S.celebrationRoot}>
+        <View style={S.celebrationCard}>
+          <View style={S.celebrationIcon}>
+            <Ionicons name="sparkles" size={28} color={C.green} />
+          </View>
+          <Text style={S.celebrationTitle}>Gratulerer!</Text>
+          <Text style={S.celebrationText}>
+            Du er nå på vei mot bedre økonomisk oversikt.
+          </Text>
+          <Pressable
+            onPress={onContinue}
+            accessibilityRole="button"
+            style={[S.primary, S.celebrationButton]}
+          >
+            <Text style={S.primaryText}>Se oversikten min</Text>
+          </Pressable>
+        </View>
       </View>
     </Modal>
-  </>;
+  );
 }
-function InsuranceFact({label,value}:{label:string;value:string}){return <View style={S.insFact}><Text style={S.insFactLabel}>{label}</Text><Text style={S.insFactValue}>{value}</Text></View>}
-function Subscriptions({annual,togglePeriod,items,add,del,edit}:{annual:boolean;togglePeriod:()=>void;items:Subscription[];add:()=>void;del:(i:string,t:string)=>void;edit:(id:string)=>void}){
- const[selected,setSelected]=useState<Subscription|null>(null);const[sort,setSort]=useState<SortMode>('cost-desc');const periodLabel=(p:Period)=>p==='year'?'Per år':p==='quarter'?'Per kvartal':'Per måned';
- return <><Summary annual={annual} togglePeriod={togglePeriod} k="LØPENDE ABONNEMENT" a={kr(items.reduce((a,b)=>a+b.monthly,0))+'/mnd'} d={kr(items.reduce((a,b)=>a+b.monthly*12,0))+'/år'}/><Section title="Mine abonnement" action="Legg til" onPress={add}/><SortControl value={sort} setValue={setSort}/>{[...items].sort((a,b)=>sort==='category-asc'?a.category.localeCompare(b.category,'nb'):sort==='category-desc'?b.category.localeCompare(a.category,'nb'):sort==='cost-asc'?a.monthly-b.monthly:b.monthly-a.monthly).map(x=><GestureBudgetLine key={x.id} icon={subIcon(`${x.name} ${x.category}`)} name={x.name} sub={x.category} value={x.monthly*(annual?12:1)} period={annual?'år':'mnd'} onPress={()=>setSelected(x)} onEdit={()=>edit(x.id)} onDelete={()=>del(x.id,x.name)}/>)}<Modal visible={selected!==null} transparent animationType="fade" statusBarTranslucent onRequestClose={()=>setSelected(null)}><View style={S.insuranceModalRoot}><Pressable style={S.insuranceModalBackdrop} onPress={()=>setSelected(null)}/>{selected?<View style={S.insuranceModalCard}><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.insuranceModalContent}><View style={S.modalHead}><View style={S.flex}><Text style={S.greenKicker}>ABONNEMENT</Text><Text style={S.modalTitle}>{selected.name}</Text></View><Pressable onPress={()=>setSelected(null)} accessibilityRole="button" accessibilityLabel="Lukk" style={S.closeCircle}><Ionicons name="close" size={22} color={C.ink}/></Pressable></View><View style={S.insProviderRow}><View style={S.insProviderIcon}><Ionicons name={subIcon(`${selected.name} ${selected.category}`)} size={22} color={C.green}/></View><View><Text style={S.insEyebrow}>KATEGORI</Text><Text style={S.insProvider}>{selected.category}</Text></View></View><View style={S.insPricePanel}><View><Text style={S.insEyebrow}>NORMALISERT PRIS</Text><Text style={S.insPrice}>{kr(selected.monthly)}<Text style={S.insPriceUnit}>/mnd</Text></Text></View><View style={S.insAnnual}><Text style={S.insAnnualLabel}>Per år</Text><Text style={S.insAnnualValue}>{kr(selected.monthly*12)}</Text></View></View><View style={S.insSection}><Text style={S.insSectionTitle}>Betaling</Text><InsuranceFact label="Registrert beløp" value={`${kr(selected.registeredAmount??selected.monthly)} • ${periodLabel(selected.registeredPeriod??'month').toLowerCase()}`}/><InsuranceFact label="Neste betaling / fornyelse" value={selected.renewal||'Ikke registrert'}/></View><View style={S.insBudgetTag}><Ionicons name="checkmark-circle" size={17} color={C.green}/><Text style={S.insBudgetTagText}>Lagt til i budsjett</Text></View><View style={S.popupActions}><Pressable onPress={()=>{const id=selected.id;setSelected(null);edit(id)}} accessibilityRole="button" accessibilityLabel="Rediger" style={S.insEditAction}><Ionicons name="pencil-outline" size={18} color={C.green}/><Text style={S.insEditActionText}>Rediger</Text></Pressable><Pressable onPress={()=>{const current=selected;setSelected(null);del(current.id,current.name)}} accessibilityRole="button" accessibilityLabel="Slett" style={S.insDeleteAction}><Ionicons name="trash-outline" size={20} color={C.red}/></Pressable></View></ScrollView></View>:null}</View></Modal></>}
 
-function Savings({annual,togglePeriod,goals,add,del,edit,update}:{annual:boolean;togglePeriod:()=>void;goals:Goal[];add:()=>void;del:(i:string,t:string)=>void;edit:(id:string)=>void;update:(i:string,n:number)=>void}){const[sort,setSort]=useState<SortMode>('cost-desc');const baseGroups:GoalCategory[]=['Sparemål','Buffer','Fond','Aksjer','Pensjon'];const groups=[...baseGroups].sort((a,b)=>sort==='category-desc'?b.localeCompare(a,'nb'):a.localeCompare(b,'nb'));return <><Summary annual={annual} togglePeriod={togglePeriod} k="FAST SPARING" a={kr(goals.reduce((a,b)=>a+b.monthly,0))+'/mnd'} d={kr(goals.reduce((a,b)=>a+b.saved,0))+' satt inn totalt'}/><Section title="Sparing og investering" action="Legg til" onPress={add}/><SortControl value={sort} setValue={setSort}/>{groups.map(c=>{const list=goals.filter(g=>g.category===c).sort((a,b)=>sort==='cost-asc'?(a.monthly-b.monthly)||(a.saved-b.saved):(b.monthly-a.monthly)||(b.saved-a.saved));return list.length?<View key={c}><Text style={S.groupTitle}>{c}</Text>{list.map(g=><GoalCard key={g.id} annual={annual} g={g} del={()=>del(g.id,g.name)} edit={()=>edit(g.id)} update={n=>update(g.id,n)}/>)}</View>:null})}</>}
-function GoalCard({g,annual,del,edit,update}:{g:Goal;annual:boolean;del:()=>void;edit:()=>void;update:(n:number)=>void}){
- const[pay,setPay]=useState(Math.max(500,g.monthly||1000));const[showExtra,setShowExtra]=useState(false);const usesTarget=goalUsesTarget(g.category);const hasTarget=g.target>0;const pct=hasTarget?Math.round(g.saved/g.target*100):0;const remaining=Math.max(0,g.target-g.saved);const months=usesTarget&&hasTarget&&remaining>0&&g.monthly>0?Math.ceil(remaining/g.monthly):null;const forecast=!usesTarget?(g.category==='Pensjon'?'Langsiktig pensjonssparing uten krav om måloppnåelse':`Fast ${g.category.toLowerCase()}sparing uten krav om måloppnåelse`):!hasTarget?'Legg inn et målbeløp for å se prognose':remaining<=0?'Målet er nådd':months!==null?`Ca. ${durationText(months)} igjen med dagens sparing`:'Legg inn fast månedlig sparing for å se prognose';const targetDate=parseDate(g.targetDate);const now=new Date();const monthsToDate=targetDate?Math.max(0,(targetDate.getFullYear()-now.getFullYear())*12+(targetDate.getMonth()-now.getMonth())+(targetDate.getDate()>now.getDate()?1:0)):0;const requiredMonthly=usesTarget&&hasTarget&&remaining>0&&monthsToDate>0?Math.ceil(remaining/monthsToDate):null;const planText=!usesTarget||!hasTarget||!targetDate?'':remaining<=0?'Målbeløpet er allerede nådd.':monthsToDate<=0?'Måldatoen er passert.':requiredMonthly!==null?g.monthly>=requiredMonthly?`Du ligger i rute. Minst ca. ${kr(requiredMonthly)}/mnd trengs frem til måldatoen.`:`For å nå målet innen måldatoen bør du spare ca. ${kr(requiredMonthly)}/mnd. Det er ca. ${kr(requiredMonthly-g.monthly)}/mnd mer enn dagens sparing.`:'';
- return <View style={S.goal}>{g.imageUri?<ImageBackground source={{uri:g.imageUri}} style={S.goalImage} imageStyle={S.goalImageInner}><View style={S.overlay}/><View style={S.goalText}><Text style={S.goalLight}>{g.name}</Text><Text style={S.goalMeta}>{g.category}{g.targetDate?` • ${g.targetDate}`:''}</Text></View></ImageBackground>:<View style={S.goalFallback}><Ionicons name={goalIcon(g)} size={32} color={C.green}/><View style={S.flex}><Text style={S.groupTitle}>{g.name}</Text><Text style={S.cardSub}>{g.category}{g.targetDate?` • ${g.targetDate}`:''}</Text></View></View>}<View style={S.trashFloat}><Pressable onPress={edit} accessibilityRole="button" accessibilityLabel={`Rediger ${g.name}`} style={S.editMini}><Ionicons name="pencil-outline" size={18} color={C.green}/></Pressable><Trash onPress={del}/></View><View style={S.goalBody}><Text style={S.goalMonthly}>Fast {kr(Math.round(g.monthly*(annual?12:1)))}/{annual?'år':'mnd'}</Text><Text style={S.goalSaved}>Totalt satt inn: {kr(g.saved)}{usesTarget&&hasTarget?<Text style={S.goalTarget}> av {kr(g.target)}</Text>:null}</Text>{usesTarget&&hasTarget?<><Progress val={Math.min(100,pct)}/><Text style={S.cardSub}>{pct}% • fast {kr(g.monthly)}/mnd • lagt til i budsjettet</Text></>:<Text style={S.cardSub}>Fast {kr(g.monthly)}/mnd • lagt til i budsjettet</Text>}<View style={S.goalForecast}><Ionicons name={remaining<=0&&usesTarget&&hasTarget?'checkmark-circle-outline':'time-outline'} size={18} color={C.green}/><Text style={S.goalForecastText}>{forecast}</Text></View>{planText?<View style={S.goalPlan}><Ionicons name={g.monthly>=Number(requiredMonthly||0)?'checkmark-circle-outline':'calculator-outline'} size={18} color={C.green}/><Text style={S.goalPlanText}>{planText}</Text></View>:null}<Pressable onPress={()=>setShowExtra(v=>!v)} style={S.extraToggle}><Text style={S.extraToggleText}>{showExtra?'Skjul ekstra innbetaling':'Legg til ekstra innbetaling'}</Text><Ionicons name={showExtra?'chevron-up':'chevron-down'} size={17} color={C.green}/></Pressable>{showExtra?<View style={S.sliderBox}><View style={S.rowBetween}><Text style={S.cardSub}>Ekstra innbetaling</Text><Text style={S.value}>{kr(pay)}</Text></View><Slider minimumValue={0} maximumValue={10000} step={100} value={pay} onValueChange={setPay} minimumTrackTintColor={C.green} maximumTrackTintColor="#D9E2DD" thumbTintColor={C.green}/><Pressable onPress={()=>{update(pay);setShowExtra(false)}} accessibilityRole="button" accessibilityLabel="Registrer ekstra innbetaling" style={S.primarySmall}><Text style={S.primaryText}>Registrer innbetaling</Text></Pressable></View>:null}</View></View>}
+function PeriodControl({
+  annual,
+  toggle,
+}: {
+  annual: boolean;
+  toggle: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={toggle}
+      accessibilityRole="button"
+      accessibilityLabel="Bytt mellom måned og år"
+      style={S.inlinePeriod}
+    >
+      <Text style={[S.inlinePeriodText, !annual && S.inlinePeriodActive]}>
+        mnd
+      </Text>
+      <Text style={S.inlinePeriodSlash}>/</Text>
+      <Text style={[S.inlinePeriodText, annual && S.inlinePeriodActive]}>
+        år
+      </Text>
+    </Pressable>
+  );
+}
+function Header({
+  title,
+  onReset,
+  onOpenAbout,
+}: {
+  title: string;
+  onReset: () => void;
+  onOpenAbout: () => void;
+}) {
+  return (
+    <View style={S.header}>
+      <View style={S.brandTitle}>
+        <Image
+          source={require("../assets/images/icon.png")}
+          style={S.headerLogo}
+        />
+        <Text style={S.title}>{title}</Text>
+      </View>
+      <Pressable
+        onPress={onOpenAbout}
+        onLongPress={onReset}
+        delayLongPress={7000}
+        accessibilityRole="button"
+        accessibilityLabel="Person og innstillinger"
+        accessibilityHint="Åpner Om Overs. Hold inne i sju sekunder for nullstilling av appdata"
+        style={S.avatar}
+      >
+        <Ionicons name="people" size={20} color={C.green} />
+      </Pressable>
+    </View>
+  );
+}
+function AboutOvers({
+  visible,
+  close,
+  onReset,
+}: {
+  visible: boolean;
+  close: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={close}
+    >
+      <View style={S.aboutRoot}>
+        <Pressable style={S.backdrop} onPress={close} />
+        <View style={S.aboutSheet}>
+          <View style={S.modalHead}>
+            <View>
+              <Text style={S.greenKicker}>OM OVERS</Text>
+              <Text style={S.modalTitle}>Overs</Text>
+            </View>
+            <Pressable
+              onPress={close}
+              accessibilityRole="button"
+              accessibilityLabel="Lukk"
+              style={S.closeCircle}
+            >
+              <Ionicons name="close" size={22} color={C.ink} />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={S.aboutSection}>
+              <Text style={S.aboutTitle}>Økonomisk oversikt</Text>
+              <Text style={S.aboutText}>
+                Overs hjelper deg å samle og strukturere opplysninger om
+                inntekter, utgifter, sparing, forsikringer og abonnement. Overs
+                gir økonomisk oversikt, ikke økonomiske anbefalinger.
+              </Text>
+            </View>
+            <View style={S.aboutSection}>
+              <Text style={S.aboutTitle}>Personvern og lagring</Text>
+              <Text style={S.aboutText}>
+                Økonomiske opplysninger du registrerer i denne versjonen lagres
+                lokalt i appens lagring på enheten. Overs har foreløpig ingen
+                konto- eller familiesynkronisering. Sletting av appdata fjerner
+                de registrerte opplysningene fra Overs på denne enheten.
+              </Text>
+            </View>
+            <View style={S.aboutSection}>
+              <Text style={S.aboutTitle}>Appversjon</Text>
+              <Text style={S.aboutText}>Overs 0.1.0</Text>
+            </View>
+            <Pressable
+              onPress={() =>
+                Linking.openURL(
+                  "https://grevelen.github.io/oversiktsapp/privacy-policy.html",
+                )
+              }
+              accessibilityRole="link"
+              accessibilityLabel="Les personvernerklæringen"
+              style={S.aboutPrivacyNote}
+            >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={19}
+                color={C.green}
+              />
+              <View style={S.flex}>
+                <Text style={S.aboutPrivacyNoteText}>
+                  Les personvernerklæringen
+                </Text>
+                <Text style={S.aboutPrivacyLinkText}>
+                  grevelen.github.io/oversiktsapp
+                </Text>
+              </View>
+              <Ionicons name="open-outline" size={17} color={C.green} />
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                close();
+                onReset();
+              }}
+              accessibilityRole="button"
+              style={S.aboutReset}
+            >
+              <Ionicons name="trash-outline" size={18} color={C.red} />
+              <Text style={S.aboutResetText}>Nullstill appdata</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+function Overview({
+  annual,
+  togglePeriod,
+  data,
+  setData,
+  budget,
+  insights,
+  dismissedCount,
+  onDismiss,
+  onReset,
+  openBudget,
+  go,
+}: {
+  annual: boolean;
+  togglePeriod: () => void;
+  data: AppData;
+  setData: Dispatch<SetStateAction<AppData>>;
+  budget: { income: number; expense: number; saving: number; left: number };
+  insights: Insight[];
+  dismissedCount: number;
+  onDismiss: (id: string) => void;
+  onReset: () => void;
+  openBudget: () => void;
+  go: (t: Tab) => void;
+}) {
+  const [all, setAll] = useState(false);
+  const [showIntroCelebration, setShowIntroCelebration] = useState(false);
+  const first = insights.length ? insights[0] : null;
+  const shown = all ? insights.slice(1) : [];
+  const skipped = data.skippedSetup || [];
+  const setup = [
+    {
+      id: "income",
+      label: "Legg til en inntekt",
+      detail: "Start med det som kommer inn hver måned.",
+      done: data.incomes.length > 0,
+      target: "Budsjett" as Tab,
+    },
+    {
+      id: "expense",
+      label: "Legg til en utgift",
+      detail: "Registrer en fast eller variabel utgift.",
+      done: data.expenses.length > 0,
+      target: "Budsjett" as Tab,
+    },
+    {
+      id: "insurance",
+      label: "Legg til en forsikring",
+      detail: "Registrer en forsikring. Resten kan legges til senere.",
+      done: data.insurance.length > 0,
+      target: "Forsikringer" as Tab,
+    },
+    {
+      id: "subscription",
+      label: "Legg til et abonnement",
+      detail: "Registrer en løpende tjeneste eller et medlemskap.",
+      done: data.subscriptions.length > 0,
+      target: "Abonnement" as Tab,
+    },
+    {
+      id: "goal",
+      label: "Opprett et sparemål",
+      detail: "Lag et sparemål eller en buffer.",
+      done: data.goals.length > 0,
+      target: "Sparing" as Tab,
+    },
+  ].map((x) => ({ ...x, skipped: skipped.includes(x.id) }));
+  const setupDone = setup.filter((x) => x.done || x.skipped).length;
+  const setupReady = setupDone === setup.length;
+  const showCelebration = () => setShowIntroCelebration(true);
+  const finishIntroduction = () => {
+    setShowIntroCelebration(false);
+    setData((d) => ({ ...d, onboardingComplete: true, dismissedInsights: [] }));
+  };
+  const skipIntroduction = showCelebration;
+  if (!data.onboardingComplete)
+    return (
+      <>
+        <View style={S.pitch}>
+          <Text style={S.greenKicker}>KOM I GANG</Text>
+          <Text style={S.pitchTitle}>Bygg oversikten din</Text>
+          <Text style={S.small}>
+            {setupDone} av {setup.length} registrert.
+          </Text>
+          <Text style={S.small}>
+            Når grunnlaget er lagt inn bidrar Overs til å gi deg økonomisk
+            oversikt.
+          </Text>
+        </View>
+        {setup.map((x, i) => (
+          <View key={x.id} style={S.onboardingRow}>
+            <Pressable onPress={() => go(x.target)} style={S.onboardingMain}>
+              <View style={[S.onboardingNumber, x.done && S.onboardingDone]}>
+                {x.done ? (
+                  <Ionicons name="checkmark" size={18} color={C.white} />
+                ) : (
+                  <Text style={S.onboardingNumberText}>{i + 1}</Text>
+                )}
+              </View>
+              <View style={S.flex}>
+                <Text style={S.cardTitle}>{x.label}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={C.green} />
+            </Pressable>
+          </View>
+        ))}
+        {setupReady ? (
+          <View style={S.onboardingReview}>
+            <Text style={S.pitchTitle}>Godt jobbet med første steg</Text>
+            <Text style={S.small}>
+              Du er nå godt i gang på vei mot bedre økonomisk oversikt.
+            </Text>
+            <Pressable onPress={showCelebration} style={S.primary}>
+              <Text style={S.primaryText}>Fortsett</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            onPress={skipIntroduction}
+            accessibilityRole="button"
+            style={S.skipIntroductionButton}
+          >
+            <Text style={S.skipIntroductionText}>Hopp over introduksjon</Text>
+          </Pressable>
+        )}
+        <IntroCelebration
+          visible={showIntroCelebration}
+          onContinue={finishIntroduction}
+        />
+      </>
+    );
+  return (
+    <>
+      <OverviewHero
+        budget={budget}
+        openBudget={openBudget}
+        annual={annual}
+        togglePeriod={togglePeriod}
+      />
+      {first ? (
+        <>
+          <View key={first.id} style={S.pitch}>
+            <View style={S.insightMain}>
+              <View style={S.icon}>
+                <Ionicons name={first.icon} size={23} color={C.green} />
+              </View>
+              <View style={S.flex}>
+                <View style={S.insightHeadingRow}>
+                  <Text style={S.greenKicker}>ØKONOMISK INNSIKT</Text>
+                  <Text style={S.insightKind}>
+                    {first.kind === "action"
+                      ? "HANDLING"
+                      : first.kind === "positive"
+                        ? "POSITIVT"
+                        : "OBSERVASJON"}
+                  </Text>
+                </View>
+                <Text style={S.pitchTitle}>{first.title}</Text>
+                <Text style={S.small}>{first.detail}</Text>
+              </View>
+            </View>
+            <View style={S.insightFooter}>
+              {first.id === "budget-surplus" ? (
+                <Pressable
+                  onPress={() => onDismiss(first.id)}
+                  style={S.surplusDoneButton}
+                >
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={18}
+                    color={C.white}
+                  />
+                  <Text style={S.surplusDoneButtonText}>Topp</Text>
+                </Pressable>
+              ) : first.id === "buffer-missing" ? (
+                <>
+                  <Pressable
+                    onPress={() => go("Sparing")}
+                    style={S.reviewedButton}
+                  >
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={18}
+                      color={C.green}
+                    />
+                    <Text style={S.reviewedButtonText}>Legg til buffer</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => go("Sparing")}
+                    style={S.insightOpenAction}
+                  >
+                    <Text style={S.insightOpenActionText}>Åpne sparemål</Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={15}
+                      color={C.green}
+                    />
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Pressable
+                    onPress={() => go(first.target)}
+                    style={S.insightOpenAction}
+                  >
+                    <Text style={S.insightOpenActionText}>
+                      {first.target === "Forsikringer"
+                        ? "Åpne forsikringer"
+                        : first.target === "Abonnement"
+                          ? "Åpne abonnement"
+                          : first.target === "Sparing"
+                            ? "Åpne sparemål"
+                            : "Åpne budsjett"}
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={15}
+                      color={C.green}
+                    />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => onDismiss(first.id)}
+                    style={S.reviewedButton}
+                  >
+                    <Ionicons
+                      name="checkmark-circle-outline"
+                      size={18}
+                      color={C.green}
+                    />
+                    <Text style={S.reviewedButtonText}>Gjennomgått</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          </View>
+          {insights.length > 1 ? (
+            <Pressable onPress={() => setAll((v) => !v)} style={S.showInsights}>
+              <Text style={S.showInsightsText}>
+                {all
+                  ? "Skjul innsikter"
+                  : `Se ${insights.length - 1} flere innsikter`}
+              </Text>
+              <Ionicons
+                name={all ? "chevron-up" : "chevron-down"}
+                size={17}
+                color={C.green}
+              />
+            </Pressable>
+          ) : null}
+          {shown.length ? (
+            <View style={S.insightList}>
+              {shown.map((r, i) => (
+                <View key={r.id} style={S.insightRow}>
+                  <Pressable
+                    onPress={() => go(r.target)}
+                    style={S.insightRowMain}
+                  >
+                    <View style={S.insightNumber}>
+                      <Text style={S.insightNumberText}>{i + 2}</Text>
+                    </View>
+                    <View style={S.flex}>
+                      <View style={S.insightHeadingRow}>
+                        <Text style={S.cardTitle}>{r.title}</Text>
+                        <Text style={S.insightKind}>
+                          {r.kind === "action"
+                            ? "HANDLING"
+                            : r.kind === "positive"
+                              ? "POSITIVT"
+                              : "OBSERVASJON"}
+                        </Text>
+                      </View>
+                      <Text style={S.cardSub}>{r.detail}</Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={17}
+                      color={C.green}
+                    />
+                  </Pressable>
+                  <View style={S.insightRowFooter}>
+                    <Pressable
+                      onPress={() => onDismiss(r.id)}
+                      style={S.rowDone}
+                    >
+                      <Ionicons name="checkmark" size={16} color={C.green} />
+                      <Text style={S.rowDoneText}>Gjennomgått</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </>
+      ) : (
+        <View style={S.insightComplete}>
+          <View style={S.insightCompleteIcon}>
+            <Ionicons name="leaf-outline" size={24} color={C.green} />
+          </View>
+          <Text style={S.insightCompleteTitle}>God oversikt</Text>
+          <Text style={S.insightCompleteText}>
+            Du har gått gjennom innsiktene. Oppdater Overs når økonomien endrer
+            seg.
+          </Text>
+        </View>
+      )}
+      {dismissedCount > 0 ? (
+        <Pressable onPress={onReset} style={S.revisitInsights}>
+          <Ionicons name="refresh-outline" size={16} color={C.green} />
+          <Text style={S.revisitText}>Vis innsiktene på nytt</Text>
+        </Pressable>
+      ) : null}
+      <Section title="Økonomien din" />
+      <View style={S.monthGrid}>
+        <MonthMetric
+          icon="wallet-outline"
+          label="Til overs"
+          value={kr(budget.left * (annual ? 12 : 1))}
+        />
+        <MonthMetric
+          icon="flag-outline"
+          label="Sparing"
+          value={kr(budget.saving * (annual ? 12 : 1))}
+        />
+        <MonthMetric
+          icon="shield-checkmark-outline"
+          label="Forsikringer"
+          value={kr(
+            data.insurance.reduce((a, b) => a + b.monthly, 0) *
+              (annual ? 12 : 1),
+          )}
+        />
+        <MonthMetric
+          icon="repeat-outline"
+          label="Abonnement"
+          value={kr(
+            data.subscriptions.reduce((a, b) => a + b.monthly, 0) *
+              (annual ? 12 : 1),
+          )}
+        />
+      </View>
+    </>
+  );
+}
 
-function Form({kind,initial,editing,close,saveInsurance,saveSubscription,saveGoal,saveIncome,saveExpense}:{kind:FormKind;initial?:any;editing:boolean;close:()=>void;saveInsurance:(x:Omit<Insurance,'id'>)=>void;saveSubscription:(x:Omit<Subscription,'id'>)=>void;saveGoal:(x:Omit<Goal,'id'>)=>void;saveIncome:(x:Omit<BudgetItem,'id'>)=>void;saveExpense:(x:Omit<BudgetItem,'id'>)=>void}){
- const[f,setF]=useState<Record<string,string>>({});const[cat,setCat]=useState<GoalCategory>('Sparemål');const[moreInsurance,setMoreInsurance]=useState(false);const[expenseGroup,setExpenseGroup]=useState<string|null>(null);const[incomeGroup,setIncomeGroup]=useState<string|null>(null);const[subscriptionGroup,setSubscriptionGroup]=useState<string|null>(null);const[incomePeriod,setIncomePeriod]=useState<Period>('month');const[expensePeriod,setExpensePeriod]=useState<Period>('month');const[subscriptionPeriod,setSubscriptionPeriod]=useState<Period>('month');const[showSubscriptionDate,setShowSubscriptionDate]=useState(false);const[insurancePeriod,setInsurancePeriod]=useState<Period>('month');const[showInsuranceStartDate,setShowInsuranceStartDate]=useState(false);const[showInsuranceExpiryDate,setShowInsuranceExpiryDate]=useState(false);const[showGoalDate,setShowGoalDate]=useState(false);const[insuredValueUnit,setInsuredValueUnit]=useState<InsuredValueUnit>('kr');const[atBottom,setAtBottom]=useState(false);
- const incomeTypes:[string,string[]][]=[['Arbeid',['Lønn','Overtid / tillegg','Bonus','Næringsinntekt']],['Trygd',['Barnetrygd','Kontantstøtte','Foreldrepenger','Barnebidrag','Sykepenger','Dagpenger','Pensjon','NAV / trygd']],['Studier',['Stipend','Studielån']],['Kapital og eiendom',['Leieinntekt','Renteinntekt','Utbytte']],['Annet',['Annen inntekt']]];
- const expenseTypes:[string,string[]][]=[['Bolig',['Boliglån','Husleie','Strøm','Kommunale avgifter']],['Forsikringer',['Husforsikring','Innboforsikring','Bilforsikring','Reiseforsikring','Livsforsikring','Ulykkesforsikring','Annen forsikring']],['Abonnement',['Mobil','Internett','TV / streaming','Musikk','Skylagring','Programvare','Avis / nyheter','Gaming','Annet abonnement']],['Mat og husholdning',['Mat og dagligvarer','Husholdningsartikler']],['Barn',['Barnehage / SFO','Klær og utstyr','Fritidsaktiviteter']],['Transport',['Billån','Drivstoff / lading','Bom / parkering','Kollektivtransport']],['Gjeld',['Studielån','Kredittkort / lån']],['Helse og fritid',['Medisiner / behandling','Trening','Restaurant / takeaway','Klær og sko']],['Annet',['Gaver','Kjæledyr','Uforutsette utgifter','Annen utgift']]];
- const insuranceTypes=['Husforsikring','Innboforsikring','Bilforsikring','Reiseforsikring','Livsforsikring','Ulykkesforsikring','Dyreforsikring','Annen forsikring'];
- const insuranceProviders=['DNB','Gjensidige','If','Tryg','Fremtind','Frende','Storebrand','KLP','Eika','JBF','WaterCircles','Annet selskap'];
- const subscriptionTypes:[string,string[]][]=[['TV / streaming',['Netflix','Max','Disney+','TV 2 Play','Viaplay','YouTube Premium','Annen strømmetjeneste']],['Musikk',['Spotify','Apple Music','YouTube Music','Tidal','Annen musikktjeneste']],['Mobil',['Telenor','Telia','ice','Talkmore','OneCall','Chilimobil','Annet mobilabonnement']],['Internett',['Telenor','Telia','Altibox','NextGenTel','GlobalConnect','Annet internettabonnement']],['Programvare',['Microsoft 365','Adobe','Google One','Dropbox','Annen programvare']],['Gaming',['PlayStation Plus','Xbox Game Pass','Nintendo Switch Online','EA Play','Annet gamingabonnement']],['Avis / nyheter',['VG+','Aftenposten','DN','Tønsbergs Blad','Annet nyhetsabonnement']],['Skylagring',['iCloud+','Google One','Dropbox','OneDrive','Annen skylagring']],['Trening',['Treningssenter','Treningsapp','Annet treningsabonnement']],['Annet',['Annet abonnement']]];
- const set=(k:string,v:string)=>setF(x=>({...x,[k]:v}));
- useEffect(()=>{const i=initial||{};setF(kind==='insurance'?{name:i.type||'',provider:i.provider||'',monthly:(i.registeredAmount??i.monthly)?groupDigits(String(i.registeredAmount??i.monthly)):'',bonus:i.bonus||'',coverageType:i.coverageType||i.coverage||'',insuredValue:i.insuredValue||'',deductible:i.deductible||'',startDate:i.startDate||'',expiryDate:i.expiryDate||i.renewal||'',note:i.note||''}:kind==='subscription'?{name:i.name||'',category:i.category||'',monthly:(i.registeredAmount??i.monthly)?groupDigits(String(i.registeredAmount??i.monthly)):'',date:i.renewal||''}:kind==='goal'?{name:i.name||'',monthly:i.monthly?groupDigits(String(i.monthly)):'',target:i.target?groupDigits(String(i.target)):'',saved:i.saved?groupDigits(String(i.saved)):'',date:i.targetDate||''}:kind==='income'?{category:i.category||'',origin:i.origin||'',monthly:(i.registeredAmount??i.monthly)?groupDigits(String(i.registeredAmount??i.monthly)):''}:kind==='expense'?{name:i.name||'',category:i.category||'',monthly:(i.registeredAmount??i.monthly)?groupDigits(String(i.registeredAmount??i.monthly)):'',interest:i.interest?groupDigits(String(i.interest)):'',principal:i.principal?groupDigits(String(i.principal)):'',provider:i.origin||''}:{});setCat(i.category||'Sparemål');setMoreInsurance(!!(i.bonus||i.coverageType||i.insuredValue||i.deductible||i.startDate||i.expiryDate||i.note));setExpenseGroup(kind==='expense'&&i.category?i.category:null);setIncomeGroup(kind==='income'&&i.category?(incomeTypes.find(([,items])=>items.includes(i.category))?.[0]||null):null);setSubscriptionGroup(kind==='subscription'&&i.category?i.category:null);setSubscriptionPeriod(kind==='subscription'?(i.registeredPeriod||'month'):'month');setShowSubscriptionDate(false);setInsurancePeriod(kind==='insurance'?(i.registeredPeriod||'month'):'month');setShowInsuranceStartDate(false);setShowInsuranceExpiryDate(false);setIncomePeriod(kind==='income'?(i.registeredPeriod||'month'):'month');setExpensePeriod(kind==='expense'?(i.registeredPeriod||'month'):'month');setInsuredValueUnit(kind==='insurance'?(i.insuredValueUnit||'kr'):'kr')},[kind,initial]);
- if(!kind)return null;
- const submit=()=>{if(kind==='insurance'){const amount=num(f.monthly);const monthly=insurancePeriod==='quarter'?amount/3:insurancePeriod==='year'?amount/12:amount;return saveInsurance({type:f.name||'Forsikring',provider:f.provider||'Ikke registrert',monthly,registeredAmount:amount,registeredPeriod:insurancePeriod,coverage:f.coverageType||'',renewal:f.expiryDate||'',bonus:f.bonus,coverageType:f.coverageType,insuredValue:f.insuredValue,insuredValueUnit,deductible:f.deductible,startDate:f.startDate,expiryDate:f.expiryDate,note:f.note})};if(kind==='subscription'){const amount=num(f.monthly);const monthly=subscriptionPeriod==='quarter'?amount/3:subscriptionPeriod==='year'?amount/12:amount;return saveSubscription({name:f.name||'Abonnement',category:f.category||'Annet',monthly,renewal:f.date||'',registeredAmount:amount,registeredPeriod:subscriptionPeriod})};if(kind==='goal')return saveGoal({name:f.name||cat,target:num(f.target),saved:num(f.saved),targetDate:f.date||'',category:cat,monthly:num(f.monthly)});if(kind==='income'){const amount=num(f.monthly);const monthly=incomePeriod==='quarter'?amount/3:incomePeriod==='year'?amount/12:amount;return saveIncome({name:f.category||'Inntekt',category:f.category||'Annen inntekt',monthly,registeredAmount:amount,registeredPeriod:incomePeriod,origin:f.origin||undefined})}const amount=f.name==='Boliglån'?num(f.interest)+num(f.principal):num(f.monthly);const period:Period=f.name==='Boliglån'?'month':expensePeriod;const monthly=period==='quarter'?amount/3:period==='year'?amount/12:amount;return saveExpense({name:f.name||'Utgift',category:f.category||'Annet',monthly,registeredAmount:amount,registeredPeriod:period,origin:f.category==='Forsikringer'?(f.provider||'Ikke registrert'):undefined,interest:f.name==='Boliglån'?num(f.interest):undefined,principal:f.name==='Boliglån'?num(f.principal):undefined})};
- const title=kind==='insurance'?'forsikring':kind==='subscription'?'abonnement':kind==='goal'?'sparing':kind==='income'?'inntekt':'utgift';
- return <Modal visible transparent animationType="slide"><KeyboardAvoidingView style={S.modalWrap} behavior={Platform.OS==='ios'?'padding':undefined}><Pressable style={S.backdrop} onPress={close}/><View style={S.modal}><View style={S.modalHead}><Text style={S.modalTitle}>{editing?'Rediger':'Legg til'} {title}</Text><Pressable onPress={close}><Ionicons name="close" size={24}/></Pressable></View><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={S.formScroll} onScroll={({nativeEvent})=>{const {layoutMeasurement,contentOffset,contentSize}=nativeEvent;setAtBottom(layoutMeasurement.height+contentOffset.y>=contentSize.height-40)}} scrollEventThrottle={16}>
- {kind==='income'?<><Text style={S.formLabel}>Inntektstype</Text>{!incomeGroup?<View style={S.categoryGrid}>{incomeTypes.map(([group])=><Pressable key={group} onPress={()=>setIncomeGroup(group)} style={S.categoryChoice}><Text style={S.categoryChoiceText}>{group}</Text></Pressable>)}</View>:<><Pressable onPress={()=>setIncomeGroup(null)} style={S.categoryBack}><Ionicons name="chevron-back" size={18} color={C.green}/><Text style={S.categoryBackText}>Alle kategorier</Text></Pressable><Text style={S.expenseSelectedTitle}>{incomeGroup}</Text><View style={S.expenseOptionList}>{(incomeTypes.find(([g])=>g===incomeGroup)?.[1]||[]).map(t=><Pressable key={t} onPress={()=>{set('category',/^Annen|^Annet/i.test(t)?'':t);if(t==='Lønn'&&incomePeriod==='quarter')setIncomePeriod('month')}} style={[S.expenseOption,f.category===t&&S.expenseOptionOn]}><Text style={[S.expenseOptionText,f.category===t&&S.expenseOptionTextOn]}>{t}</Text>{f.category===t?<Ionicons name="checkmark" size={20} color={C.white}/>:null}</Pressable>)}</View></>}{incomeGroup==='Annet'?<TextInput value={f.category||''} onChangeText={v=>set('category',v)} placeholder="Skriv egen inntektstype" style={S.input}/>:null}<Text style={S.formLabel}>Beløpet gjelder</Text><View style={S.chips}>{(f.category==='Lønn'?([['month','Månedslønn'],['year','Årslønn']] as const):([['month','Per måned'],['quarter','Per kvartal'],['year','Per år']] as const)).map(([v,l])=><Pressable key={v} onPress={()=>setIncomePeriod(v)} style={[S.chip,incomePeriod===v&&S.chipOn]}><Text style={[S.chipText,incomePeriod===v&&S.chipTextOn]}>{l}</Text></Pressable>)}</View><TextInput value={f.monthly||''} onChangeText={v=>set('monthly',groupDigits(v))} placeholder={incomePeriod==='year'?(f.category==='Lønn'?"Beløp utbetalt per år":"Beløp per år"):incomePeriod==='quarter'?"Beløp per kvartal":(f.category==='Lønn'?"Beløp utbetalt per måned":"Beløp per måned")} keyboardType="decimal-pad" style={S.input}/><TextInput value={f.origin||''} onChangeText={v=>set('origin',v)} placeholder="Utbetaler eller kilde (valgfritt)" style={S.input}/></>:null}
- {kind==='expense'?<><Text style={S.formLabel}>Utgiftstype</Text>{!expenseGroup?<View style={S.categoryGrid}>{expenseTypes.map(([group])=><Pressable key={group} onPress={()=>setExpenseGroup(group)} style={S.categoryChoice}><View style={S.categoryIcon}><Ionicons name={group==='Bolig'?'home-outline':group==='Forsikringer'?'shield-checkmark-outline':group==='Abonnement'?'repeat-outline':group==='Mat og husholdning'?'basket-outline':group==='Barn'?'people-outline':group==='Transport'?'car-outline':group==='Gjeld'?'card-outline':group==='Helse og fritid'?'heart-outline':'ellipsis-horizontal-outline'} size={18} color={C.green}/></View><Text style={S.categoryChoiceText}>{group}</Text></Pressable>)}</View>:<><Pressable onPress={()=>setExpenseGroup(null)} style={S.categoryBack}><Ionicons name="chevron-back" size={18} color={C.green}/><Text style={S.categoryBackText}>Alle kategorier</Text></Pressable><Text style={S.expenseSelectedTitle}>{expenseGroup}</Text><View style={S.expenseOptionList}>{(expenseTypes.find(([g])=>g===expenseGroup)?.[1]||[]).map(t=><Pressable key={t} onPress={()=>setF(x=>({...x,name:/^Annen|^Annet/i.test(t)?'':t,category:expenseGroup}))} style={[S.expenseOption,f.name===t&&S.expenseOptionOn]}><Text style={[S.expenseOptionText,f.name===t&&S.expenseOptionTextOn]}>{t}</Text>{f.name===t?<Ionicons name="checkmark" size={20} color={C.white}/>:null}</Pressable>)}</View></>}{expenseGroup==='Forsikringer'?<><Text style={S.formLabel}>Forsikringsselskap</Text><View style={S.suggestionWrap}>{insuranceProviders.map(t=><Pressable key={t} onPress={()=>set('provider',t==='Annet selskap'?'':t)} style={[S.suggestionChip,f.provider===t&&S.suggestionChipOn]}><Text style={[S.suggestionText,f.provider===t&&S.suggestionChipOn]}>{t}</Text></Pressable>)}</View><TextInput value={f.provider||''} onChangeText={v=>set('provider',v)} placeholder="Skriv forsikringsselskap" style={S.input}/></>:null}{f.name==='Boliglån'?<View style={S.mortgageBox}><Text style={S.formLabel}>Fordel boliglånet</Text><TextInput value={f.interest||''} onChangeText={v=>set('interest',groupDigits(v))} placeholder="Renter per måned" keyboardType="decimal-pad" style={S.input}/><TextInput value={f.principal||''} onChangeText={v=>set('principal',groupDigits(v))} placeholder="Avdrag per måned" keyboardType="decimal-pad" style={S.input}/><TextInput value={groupDigits(String(num(f.interest)+num(f.principal)))} editable={false} placeholder="Total termin per måned" style={S.input}/></View>:null}<TextInput value={f.name||''} onChangeText={v=>set('name',v)} placeholder={expenseGroup&&f.name===''?"Skriv egen utgiftstype":"Eget navn (valgfritt)"} style={S.input}/>{f.name!=='Boliglån'?<><Text style={S.formLabel}>Kostnaden gjelder</Text><View style={S.chips}>{([['month','Per måned'],['quarter','Per kvartal'],['year','Per år']] as const).map(([v,l])=><Pressable key={v} onPress={()=>setExpensePeriod(v)} style={[S.chip,expensePeriod===v&&S.chipOn]}><Text style={[S.chipText,expensePeriod===v&&S.chipTextOn]}>{l}</Text></Pressable>)}</View><TextInput value={f.monthly||''} onChangeText={v=>set('monthly',groupDigits(v))} placeholder={expensePeriod==='quarter'?"Kostnad per kvartal":expensePeriod==='year'?"Kostnad per år":"Kostnad per måned"} keyboardType="decimal-pad" style={S.input}/></>:null}</>:null}
- {kind==='insurance'?<><Text style={S.formLabel}>Type forsikring</Text><View style={S.suggestionWrap}>{insuranceTypes.map(t=><Pressable key={t} onPress={()=>set('name',/^Annen/i.test(t)?'':t)} style={[S.suggestionChip,f.name===t&&S.suggestionChipOn]}><Text style={[S.suggestionText,f.name===t&&S.suggestionTextOn]}>{t}</Text></Pressable>)}</View><TextInput value={f.name||''} onChangeText={v=>set('name',v)} placeholder="Skriv type forsikring" style={S.input}/><Text style={S.formLabel}>Forsikringsselskap</Text><View style={S.suggestionWrap}>{insuranceProviders.map(t=><Pressable key={t} onPress={()=>set('provider',t==='Annet selskap'?'':t)} style={[S.suggestionChip,f.provider===t&&S.suggestionChipOn]}><Text style={[S.suggestionText,f.provider===t&&S.suggestionChipOn]}>{t}</Text></Pressable>)}</View><TextInput value={f.provider||''} onChangeText={v=>set('provider',v)} placeholder="Skriv forsikringsselskap" style={S.input}/><Text style={S.formLabel}>Premien gjelder</Text><View style={S.chips}>{([['month','Per måned'],['quarter','Per kvartal'],['year','Per år']] as const).map(([v,l])=><Pressable key={v} onPress={()=>setInsurancePeriod(v)} style={[S.chip,insurancePeriod===v&&S.chipOn]}><Text style={[S.chipText,insurancePeriod===v&&S.chipTextOn]}>{l}</Text></Pressable>)}</View><TextInput value={f.monthly||''} onChangeText={v=>set('monthly',groupDigits(v))} placeholder={insurancePeriod==='quarter'?'Premie per kvartal':insurancePeriod==='year'?'Premie per år':'Premie per måned'} keyboardType="decimal-pad" style={S.input}/><TextInput value={f.note||''} onChangeText={v=>set('note',v)} placeholder="Notat (vises i oversikten)" style={S.input}/><Pressable onPress={()=>setMoreInsurance(v=>!v)} style={S.moreButton}><Text style={S.moreButtonText}>{moreInsurance?'Skjul detaljer':'Flere detaljer'}</Text></Pressable>{moreInsurance?<><TextInput value={f.bonus||''} onChangeText={v=>set('bonus',v)} placeholder="Bonus" style={S.input}/><TextInput value={f.coverageType||''} onChangeText={v=>set('coverageType',v)} placeholder="Dekningstype" style={S.input}/><Text style={S.formLabel}>Forsikringssum</Text><View style={S.chips}>{(['kr','G'] as InsuredValueUnit[]).map(v=><Pressable key={v} onPress={()=>setInsuredValueUnit(v)} style={[S.chip,insuredValueUnit===v&&S.chipOn]}><Text style={[S.chipText,insuredValueUnit===v&&S.chipTextOn]}>{v}</Text></Pressable>)}</View><TextInput value={f.insuredValue||''} onChangeText={v=>set('insuredValue',groupDigits(v))} placeholder={insuredValueUnit==='G'?'Antall G':'Forsikringssum i kroner'} keyboardType="decimal-pad" style={S.input}/><TextInput value={f.deductible||''} onChangeText={v=>set('deductible',groupDigits(v))} placeholder="Egenandel" keyboardType="decimal-pad" style={S.input}/><Text style={S.formLabel}>Tegningsdato</Text><Pressable onPress={()=>{Keyboard.dismiss();setShowInsuranceStartDate(true)}} accessibilityRole="button" accessibilityLabel="Velg tegningsdato" style={S.datePickerButton}><Text style={f.startDate?S.datePickerValue:S.datePickerPlaceholder}>{f.startDate||'Velg tegningsdato'}</Text><Ionicons name="calendar-outline" size={21} color={C.green}/></Pressable>{showInsuranceStartDate?<DateTimePicker value={parseDate(f.startDate)||new Date()} mode="date" display={Platform.OS==='ios'?'spinner':'default'} onValueChange={(_,d)=>{if(d)set('startDate',dateText(d))}} onDismiss={()=>setShowInsuranceStartDate(false)}/>:null}<Text style={S.formLabel}>Fornyelses-/utløpsdato</Text><Pressable onPress={()=>{Keyboard.dismiss();setShowInsuranceExpiryDate(true)}} accessibilityRole="button" accessibilityLabel="Velg fornyelses- eller utløpsdato" style={S.datePickerButton}><Text style={f.expiryDate?S.datePickerValue:S.datePickerPlaceholder}>{f.expiryDate||'Velg fornyelses-/utløpsdato'}</Text><Ionicons name="calendar-outline" size={21} color={C.green}/></Pressable>{showInsuranceExpiryDate?<DateTimePicker value={parseDate(f.expiryDate)||new Date()} mode="date" display={Platform.OS==='ios'?'spinner':'default'} onValueChange={(_,d)=>{if(d)set('expiryDate',dateText(d))}} onDismiss={()=>setShowInsuranceExpiryDate(false)}/>:null}</>:null}</>:null}
- {kind==='subscription'?<><Text style={S.formLabel}>Kategori</Text>{!subscriptionGroup?<View style={S.categoryGrid}>{subscriptionTypes.map(([group])=><Pressable key={group} onPress={()=>{setSubscriptionGroup(group);set('category',group);set('name','')}} style={S.categoryChoice}><View style={S.categoryIcon}><Ionicons name={group==='TV / streaming'?'play-circle-outline':group==='Musikk'?'headset-outline':group==='Mobil'?'phone-portrait-outline':group==='Internett'?'wifi-outline':group==='Programvare'?'apps-outline':group==='Gaming'?'game-controller-outline':group==='Avis / nyheter'?'newspaper-outline':group==='Skylagring'?'cloud-outline':group==='Trening'?'fitness-outline':'ellipsis-horizontal-outline'} size={18} color={C.green}/></View><Text style={S.categoryChoiceText}>{group}</Text></Pressable>)}</View>:<><Pressable onPress={()=>{setSubscriptionGroup(null);set('category','');set('name','')}} style={S.categoryBack}><Ionicons name="chevron-back" size={18} color={C.green}/><Text style={S.categoryBackText}>Alle kategorier</Text></Pressable><Text style={S.expenseSelectedTitle}>{subscriptionGroup}</Text><View style={S.expenseOptionList}>{(subscriptionTypes.find(([g])=>g===subscriptionGroup)?.[1]||[]).map(t=><Pressable key={t} onPress={()=>set('name',/^Annen|^Annet/i.test(t)?'':t)} style={[S.expenseOption,f.name===t&&S.expenseOptionOn]}><Text style={[S.expenseOptionText,f.name===t&&S.expenseOptionTextOn]}>{t}</Text>{f.name===t?<Ionicons name="checkmark" size={20} color={C.white}/>:null}</Pressable>)}</View></>}<TextInput value={f.name||''} onChangeText={v=>set('name',v)} placeholder={subscriptionGroup==='Annet'||f.name===''?"Skriv navn på abonnement":"Navn på abonnement"} style={S.input}/><Text style={S.formLabel}>Betalingsperiode</Text><View style={S.chips}>{([['month','Per måned'],['quarter','Per kvartal'],['year','Per år']] as const).map(([v,l])=><Pressable key={v} onPress={()=>setSubscriptionPeriod(v)} style={[S.chip,subscriptionPeriod===v&&S.chipOn]}><Text style={[S.chipText,subscriptionPeriod===v&&S.chipTextOn]}>{l}</Text></Pressable>)}</View><TextInput value={f.monthly||''} onChangeText={v=>set('monthly',groupDigits(v))} placeholder={subscriptionPeriod==='quarter'?'Kostnad per kvartal':subscriptionPeriod==='year'?'Kostnad per år':'Kostnad per måned'} keyboardType="decimal-pad" style={S.input}/><Text style={S.formLabel}>Neste betaling / fornyelse</Text><Pressable onPress={()=>{Keyboard.dismiss();setShowSubscriptionDate(true)}} accessibilityRole="button" accessibilityLabel="Velg neste betaling eller fornyelse" style={S.datePickerButton}><Text style={f.date?S.datePickerValue:S.datePickerPlaceholder}>{f.date||'Velg dato'}</Text><Ionicons name="calendar-outline" size={21} color={C.green}/></Pressable>{showSubscriptionDate?<DateTimePicker value={parseDate(f.date)||new Date()} mode="date" display={Platform.OS==='ios'?'spinner':'default'} onValueChange={(_,d)=>{if(d)set('date',dateText(d))}} onDismiss={()=>setShowSubscriptionDate(false)}/>:null}</>:null}
- {kind==='goal'?<><Text style={S.formLabel}>Type sparing</Text><View style={S.chips}>{(['Sparemål','Buffer','Fond','Aksjer','Pensjon'] as GoalCategory[]).map(x=><Pressable key={x} onPress={()=>setCat(x)} style={[S.chip,cat===x&&S.chipOn]}><Text style={[S.chipText,cat===x&&S.chipTextOn]}>{x}</Text></Pressable>)}</View><TextInput value={f.name||''} onChangeText={v=>set('name',v)} placeholder="Navn" style={S.input}/><TextInput value={f.monthly||''} onChangeText={v=>set('monthly',groupDigits(v))} placeholder="Fast månedlig sparing" keyboardType="decimal-pad" style={S.input}/>{!goalUsesTargetDate(cat)?<View style={S.goalOptionalNote}><Text style={S.noteText}>Målbeløp er valgfritt for {cat.toLowerCase()}. All fast sparing vises i budsjettet.</Text></View>:null}<TextInput value={f.target||''} onChangeText={v=>set('target',groupDigits(v))} placeholder="Målbeløp (valgfritt)" keyboardType="decimal-pad" style={S.input}/><TextInput value={f.saved||''} onChangeText={v=>set('saved',groupDigits(v))} placeholder="Allerede spart" keyboardType="decimal-pad" style={S.input}/>{goalUsesTargetDate(cat)?<><Pressable onPress={()=>{Keyboard.dismiss();setShowGoalDate(true)}} accessibilityRole="button" accessibilityLabel="Velg måldato" style={S.datePickerButton}><Text style={f.date?S.datePickerValue:S.datePickerPlaceholder}>{f.date||'Velg måldato'}</Text><Ionicons name="calendar-outline" size={21} color={C.green}/></Pressable>{showGoalDate?<DateTimePicker value={parseDate(f.date)||new Date()} mode="date" display={Platform.OS==='ios'?'spinner':'default'} onValueChange={(_,d)=>{if(d)set('date',dateText(d))}} onDismiss={()=>setShowGoalDate(false)}/>:null}</>:null}</>:null}
- <Pressable onPress={submit} accessibilityRole="button" style={S.primary}><Text style={S.primaryText}>{editing?'Lagre endringer':'Lagre'}</Text></Pressable></ScrollView>{!atBottom?<Pressable onPress={submit} accessibilityRole="button" style={S.floatingSave}><Ionicons name="checkmark" size={22} color={C.white}/><Text style={S.floatingSaveText}>Lagre</Text></Pressable>:null}</View></KeyboardAvoidingView></Modal>}
+function OverviewHero({
+  budget,
+  openBudget,
+  annual,
+  togglePeriod,
+}: {
+  budget: { income: number; expense: number; saving: number; left: number };
+  openBudget: () => void;
+  annual: boolean;
+  togglePeriod: () => void;
+}) {
+  const mult = annual ? 12 : 1;
+  return (
+    <Pressable
+      onPress={openBudget}
+      style={[S.hero, budget.left < 0 && S.heroNegative]}
+    >
+      <View style={S.inlinePeriodRow}>
+        <Text style={S.heroLabel}>
+          {budget.left < 0 ? "Minus" : "Penger til overs"}
+        </Text>
+        <PeriodControl annual={annual} toggle={togglePeriod} />
+      </View>
+      <Text style={S.heroAmount}>{kr(Math.round(budget.left * mult))}</Text>
+      <View style={S.row}>
+        <Stat l="Inntekter" v={kr(Math.round(budget.income * mult))} />
+        <Stat l="Utgifter" v={kr(Math.round(budget.expense * mult))} />
+        <Stat l="Sparing" v={kr(Math.round(budget.saving * mult))} />
+      </View>
+      <View style={S.heroLink}>
+        <Text style={S.heroLinkText}>Åpne budsjett</Text>
+        <Ionicons name="chevron-forward" size={18} color="#D9E8E2" />
+      </View>
+    </Pressable>
+  );
+}
+function BudgetView({
+  annual,
+  togglePeriod,
+  data,
+  budget,
+  back,
+  addIncome,
+  addExpense,
+  go,
+  deleteIncome,
+  deleteExpense,
+  editIncome,
+  editExpense,
+}: {
+  annual: boolean;
+  togglePeriod: () => void;
+  data: AppData;
+  budget: {
+    rows: BudgetRow[];
+    savingRows: BudgetRow[];
+    income: number;
+    expense: number;
+    saving: number;
+    left: number;
+  };
+  back: () => void;
+  addIncome: () => void;
+  addExpense: () => void;
+  go: (t: Tab) => void;
+  deleteIncome: (id: string) => void;
+  deleteExpense: (row: BudgetRow) => void;
+  editIncome: (id: string) => void;
+  editExpense: (row: BudgetRow) => void;
+}) {
+  const [openSections, setOpenSections] = useState({
+    income: false,
+    expense: false,
+    saving: false,
+  });
+  const toggleSection = (section: "income" | "expense" | "saving") =>
+    setOpenSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  const [selected, setSelected] = useState<{
+    title: string;
+    category: string;
+    monthly: number;
+    details: { label: string; value: string }[];
+    onEdit?: () => void;
+    onDelete?: () => void;
+  } | null>(null);
+  const [detailAnnual, setDetailAnnual] = useState(false);
+  return (
+    <>
+      <BudgetHero
+        label="INNTEKTER"
+        value={budget.income}
+        annual={annual}
+        togglePeriod={togglePeriod}
+        detail={countText(
+          data.incomes.length,
+          "registrert inntekt",
+          "registrerte inntekter",
+        )}
+        color={C.dark}
+        open={openSections.income}
+        onPress={() => toggleSection("income")}
+        onAdd={openSections.income ? addIncome : undefined}
+      />
+      {openSections.income ? (
+        <>
+          <BudgetGroups
+            annual={annual}
+            rows={data.incomes.map((x) => ({
+              id: x.id,
+              name:
+                x.origin && x.origin !== "Ikke oppgitt" ? x.origin : x.category,
+              sub: x.note || "",
+              category: x.category,
+              monthly: x.monthly,
+              icon: "arrow-down-circle-outline" as Icon,
+              onPress: () =>
+                setSelected({
+                  title: x.category,
+                  category:
+                    x.origin && x.origin !== "Ikke oppgitt"
+                      ? x.origin
+                      : "Inntekt",
+                  monthly: x.monthly,
+                  details: [
+                    ...(x.note ? [{ label: "Notat", value: x.note }] : []),
+                  ],
+                  onEdit: () => editIncome(x.id),
+                  onDelete: () => deleteIncome(x.id),
+                }),
+              onEdit: () => editIncome(x.id),
+              onDelete: () => deleteIncome(x.id),
+            }))}
+          />
+          <Pressable
+            onPress={() => toggleSection("income")}
+            style={S.collapseButton}
+            accessibilityRole="button"
+          >
+            <Ionicons name="chevron-up" size={16} color={C.green} />
+            <Text style={S.collapseButtonText}>Lukk inntekter</Text>
+          </Pressable>
+        </>
+      ) : null}
+      <BudgetHero
+        label="UTGIFTER"
+        value={budget.expense}
+        annual={annual}
+        detail={countText(
+          budget.rows.length,
+          "registrert utgift",
+          "registrerte utgifter",
+        )}
+        color={C.red}
+        open={openSections.expense}
+        onPress={() => toggleSection("expense")}
+        onAdd={openSections.expense ? addExpense : undefined}
+      />
+      {openSections.expense ? (
+        <>
+          <BudgetGroups
+            annual={annual}
+            rows={budget.rows.map((x) => ({
+              id: x.id,
+              name: x.name,
+              sub: data.expenses.find((e) => e.id === x.id)?.note || "",
+              category: x.source === "manual" ? x.category : x.category,
+              monthly: x.monthly,
+              icon: (x.source === "insurance"
+                ? "shield-checkmark-outline"
+                : x.source === "subscription"
+                  ? "repeat-outline"
+                  : "card-outline") as Icon,
+              onPress:
+                x.source === "insurance"
+                  ? () => go("Forsikringer")
+                  : x.source === "subscription"
+                    ? () => go("Abonnement")
+                    : () => {
+                        const e = data.expenses.find((v) => v.id === x.id);
+                        setSelected({
+                          title: x.name,
+                          category: x.category,
+                          monthly: x.monthly,
+                          details: [
+                            ...(e?.interest
+                              ? [{ label: "Renter", value: kr(e.interest) }]
+                              : []),
+                            ...(e?.principal
+                              ? [{ label: "Avdrag", value: kr(e.principal) }]
+                              : []),
+                            ...(e?.note
+                              ? [{ label: "Notat", value: e.note }]
+                              : []),
+                          ],
+                          onEdit: () => editExpense(x),
+                          onDelete: () => deleteExpense(x),
+                        });
+                      },
+              onEdit: () => editExpense(x),
+              onDelete: () => deleteExpense(x),
+            }))}
+          />
+          <Pressable
+            onPress={() => toggleSection("expense")}
+            style={S.collapseButton}
+            accessibilityRole="button"
+          >
+            <Ionicons name="chevron-up" size={16} color={C.green} />
+            <Text style={S.collapseButtonText}>Lukk utgifter</Text>
+          </Pressable>
+        </>
+      ) : null}
+      <BudgetHero
+        label="SPARING"
+        value={budget.saving}
+        annual={annual}
+        detail={countText(
+          budget.savingRows.length,
+          "fast sparepost",
+          "faste spareposter",
+        )}
+        color="#365F8D"
+        open={openSections.saving}
+        onPress={() => toggleSection("saving")}
+        onAdd={openSections.saving ? () => go("Sparing") : undefined}
+      />
+      {openSections.saving ? (
+        <>
+          <BudgetGroups
+            annual={annual}
+            rows={budget.savingRows.map((x) => ({
+              id: x.id,
+              name: x.name,
+              category: x.category,
+              monthly: x.monthly,
+              icon: "flag-outline" as Icon,
+              onPress: () => go("Sparing"),
+              onEdit: () => editExpense(x),
+              onDelete: () => deleteExpense(x),
+            }))}
+          />
+          <Pressable
+            onPress={() => toggleSection("saving")}
+            style={S.collapseButton}
+            accessibilityRole="button"
+          >
+            <Ionicons name="chevron-up" size={16} color={C.green} />
+            <Text style={S.collapseButtonText}>Lukk sparing</Text>
+          </Pressable>
+        </>
+      ) : null}
+      <BudgetHero
+        label="PENGER TIL OVERS"
+        value={budget.left}
+        annual={annual}
+        detail="Inntekter − utgifter − fast sparing"
+        color={budget.left >= 0 ? C.dark : C.red}
+        open={false}
+      />
 
-type SortMode='cost-desc'|'cost-asc'|'category-asc'|'category-desc';
-const sortOptions:{value:SortMode;label:string}[]=[{value:'cost-desc',label:'Kostnad: høy–lav'},{value:'cost-asc',label:'Kostnad: lav–høy'},{value:'category-asc',label:'Kategori: A–Å'},{value:'category-desc',label:'Kategori: Å–A'}];
-function SortControl({value,setValue}:{value:SortMode;setValue:(v:SortMode)=>void}){const[open,setOpen]=useState(false);return <><View style={S.sortRow}><Pressable onPress={()=>setOpen(true)} accessibilityRole="button" accessibilityLabel="Sorter" style={S.sortButton}><Ionicons name="funnel-outline" size={16} color={C.green}/><Text style={S.sortButtonText}>Sorter</Text></Pressable></View><Modal visible={open} transparent animationType="fade" onRequestClose={()=>setOpen(false)}><View style={S.sortModalRoot}><Pressable style={S.sortBackdrop} onPress={()=>setOpen(false)}/><View style={S.sortSheet}><View style={S.sortSheetHead}><Text style={S.sortSheetTitle}>Sorter</Text><Pressable onPress={()=>setOpen(false)} style={S.closeCircle}><Ionicons name="close" size={21} color={C.ink}/></Pressable></View>{sortOptions.map(option=><Pressable key={option.value} onPress={()=>{setValue(option.value);setOpen(false)}} style={[S.sortOption,value===option.value&&S.sortOptionOn]}><Text style={[S.sortOptionText,value===option.value&&S.sortOptionTextOn]}>{option.label}</Text>{value===option.value?<Ionicons name="checkmark" size={19} color={C.green}/>:null}</Pressable>)}</View></View></Modal></>}
-function BudgetDetail({selected,close,annual,toggle}:{selected:{title:string;category:string;monthly:number;details:{label:string;value:string}[]}|null;close:()=>void;annual:boolean;toggle:()=>void}){return <Modal visible={!!selected} transparent animationType="fade" onRequestClose={close}><View style={S.insuranceModalRoot}><Pressable style={S.insuranceModalBackdrop} onPress={close}/>{selected?<View style={S.budgetDetailCard}><View style={S.modalHead}><View style={S.flex}><Text style={S.greenKicker}>BUDSJETTPOST</Text><Text style={S.modalTitle}>{selected.title}</Text><Text style={S.cardSub}>{selected.category}</Text></View><Pressable onPress={close} style={S.closeCircle}><Ionicons name="close" size={22} color={C.ink}/></Pressable></View><Pressable onPress={toggle} style={S.insPricePanel}><Text style={S.insPrice}>{kr(selected.monthly*(annual?12:1))}<Text style={S.insPriceUnit}>{annual?'/år':'/mnd'}</Text></Text></Pressable>{selected.details.length?<View style={S.insSection}>{selected.details.map(x=><InsuranceFact key={x.label} label={x.label} value={x.value}/>)}</View>:null}<View style={S.insBudgetTag}><Ionicons name="checkmark-circle" size={17} color={C.green}/><Text style={S.insBudgetTagText}>Lagt til i budsjett</Text></View></View>:null}</View></Modal>}
-function Nav({active,go}:{active:Tab;go:(t:Tab)=>void}){return <View style={S.nav}>{tabs.map(x=><Pressable key={x.name} onPress={()=>go(x.name)} accessibilityRole="tab" accessibilityState={{selected:active===x.name}} accessibilityLabel={x.name} style={[S.navItem,active===x.name&&S.navItemOn]}><Ionicons name={x.icon} size={21} color={active===x.name?C.green:C.muted}/><Text numberOfLines={1} style={[S.navText,active===x.name&&S.navOn]}>{x.name}</Text></Pressable>)}</View>}
-function MonthMetric({icon,label,value}:{icon:Icon;label:string;value:string}){return <View style={S.monthMetric}><View style={S.monthMetricIcon}><Ionicons name={icon} size={19} color={C.green}/></View><Text style={S.monthMetricLabel}>{label}</Text><Text style={S.monthMetricValue}>{value}</Text></View>}
-function Tile({icon,title,value,sub,onPress}:{icon:Icon;title:string;value:string;sub:string;onPress:()=>void}){return <Pressable onPress={onPress} style={S.tile}><View style={S.icon}><Ionicons name={icon} size={22} color={C.green}/></View><View style={S.flex}><Text style={S.cardTitle}>{title}</Text><Text style={S.cardSub}>{sub}</Text></View><Text style={S.value}>{value}</Text></Pressable>}
-function Section({title,action,onPress}:{title:string;action?:string;onPress?:()=>void}){return <View style={S.section}><Text style={S.sectionTitle}>{title}</Text>{action&&<Pressable onPress={onPress} style={S.add}><Ionicons name="add" size={18} color={C.green}/><Text style={S.addText}>{action}</Text></Pressable>}</View>}
-function Summary({annual,togglePeriod,k,a,d}:{annual:boolean;togglePeriod:()=>void;k:string;a:string;d:string}){const monthly=Number((a.match(/[\d\s.,]+/)?.[0]||'0').replace(/\s/g,'').replace(',','.'));const canToggle=a.includes('/mnd');const amount=canToggle?kr(Math.round(monthly*(annual?12:1))):a;return <View style={S.summary}><View style={S.inlinePeriodRow}><Text style={S.kicker}>{k}</Text><PeriodControl annual={annual} toggle={togglePeriod}/></View><Text style={S.summaryAmount}>{amount}</Text><Text style={S.summaryText}>{d}</Text></View>}
-function Detail({l,v}:{l:string;v:string}){return <View style={S.detail}><Text style={S.detailLabel}>{l}</Text><Text style={S.detailValue}>{v}</Text></View>}
-function Trash({onPress}:{onPress:()=>void}){return <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="Slett" style={S.trash}><Ionicons name="trash-outline" size={18} color={C.red}/></Pressable>}
-function Progress({val}:{val:number}){return <View style={S.track}><View style={[S.fill,{width:`${Math.min(100,val)}%`}]}/></View>}
-function Stat({l,v}:{l:string;v:string}){return <View style={S.flex}><Text style={S.statLabel}>{l}</Text><Text style={S.statValue}>{v}</Text></View>}
+      <BudgetDetail
+        selected={selected}
+        close={() => setSelected(null)}
+        annual={detailAnnual}
+        toggle={() => setDetailAnnual((v) => !v)}
+      />
+      <View style={S.yearRow}>
+        <Text style={S.yearLabel}>Årlig inntekt</Text>
+        <Text style={S.yearValue}>{kr(budget.income * 12)}</Text>
+        <Text style={S.yearLabel}>Årlige utgifter</Text>
+        <Text style={S.yearValue}>{kr(budget.expense * 12)}</Text>
+        <Text style={S.yearLabel}>Årlig sparing</Text>
+        <Text style={S.yearValue}>{kr(budget.saving * 12)}</Text>
+      </View>
+    </>
+  );
+}
+function BudgetHero({
+  label,
+  value,
+  detail,
+  color,
+  open,
+  onPress,
+  onAdd,
+  annual,
+  togglePeriod,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  color: string;
+  open: boolean;
+  onPress?: () => void;
+  onAdd?: () => void;
+  annual: boolean;
+  togglePeriod?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[S.budgetHero, { backgroundColor: color }]}
+    >
+      <View style={S.flex}>
+        <View style={S.inlinePeriodRow}>
+          <Text style={S.budgetHeroLabel}>{label}</Text>
+          {togglePeriod ? (
+            <PeriodControl annual={annual} toggle={togglePeriod} />
+          ) : (
+            <Text style={S.inlinePeriodStatic}>/{annual ? "år" : "mnd"}</Text>
+          )}
+        </View>
+        <Text style={S.budgetHeroValue}>
+          {kr(Math.round(value * (annual ? 12 : 1)))}
+        </Text>
+        <Text style={S.budgetHeroDetail}>{detail}</Text>
+      </View>
+      <View style={S.budgetHeroActions}>
+        {onAdd ? (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              onAdd();
+            }}
+            style={S.heroAddButton}
+          >
+            <Ionicons name="add" size={28} color={C.white} />
+          </Pressable>
+        ) : null}
+        {onPress ? (
+          <Ionicons
+            name={open ? "chevron-up" : "chevron-down"}
+            size={22}
+            color="#EFE8DD"
+          />
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+type BudgetGroupRow = {
+  id: string;
+  name: string;
+  sub?: string;
+  category: string;
+  monthly: number;
+  icon: Icon;
+  onPress: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+};
+function BudgetGroups({
+  rows,
+  annual,
+}: {
+  rows: BudgetGroupRow[];
+  annual: boolean;
+}) {
+  const mult = annual ? 12 : 1;
+  const totals = new Map<string, number>();
+  rows.forEach((x) =>
+    totals.set(x.category, (totals.get(x.category) || 0) + x.monthly),
+  );
+  const groups = [...totals.keys()].sort(
+    (a, b) =>
+      (totals.get(b) || 0) - (totals.get(a) || 0) || a.localeCompare(b, "nb"),
+  );
+  return (
+    <View style={S.accordion}>
+      {groups.map((category) => {
+        const items = rows
+          .filter((x) => x.category === category)
+          .sort((a, b) => b.monthly - a.monthly);
+        const total = totals.get(category) || 0;
+        return (
+          <View key={category} style={S.budgetGroup}>
+            <View style={S.budgetGroupHead}>
+              <Text style={S.budgetGroupTitle}>{category}</Text>
+              <Text style={S.budgetGroupTotal}>
+                {kr(Math.round(total * mult))}/{annual ? "år" : "mnd"}
+              </Text>
+            </View>
+            {items.map((x) => (
+              <GestureBudgetLine
+                key={x.id}
+                icon={x.icon}
+                name={x.name}
+                sub={x.sub || ""}
+                value={x.monthly * mult}
+                period={annual ? "år" : "mnd"}
+                onPress={x.onPress}
+                onEdit={x.onEdit}
+                onDelete={x.onDelete}
+              />
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+function GestureBudgetLine({
+  icon,
+  name,
+  sub,
+  value,
+  period = "mnd",
+  onPress,
+  onEdit,
+  onDelete,
+}: {
+  icon: Icon;
+  name: string;
+  sub: string;
+  value: number;
+  period?: "mnd" | "år";
+  onPress: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const x = useRef(new Animated.Value(0)).current;
+  const [openSide, setOpenSide] = useState<"edit" | "delete" | null>(null);
+  const close = () => {
+    setOpenSide(null);
+    Animated.spring(x, { toValue: 0, useNativeDriver: true }).start();
+  };
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12,
+      onPanResponderMove: (_, g) =>
+        x.setValue(Math.max(-105, Math.min(105, g.dx))),
+      onPanResponderRelease: (_, g) => {
+        if (g.dx > 45) {
+          setOpenSide("edit");
+          Animated.spring(x, { toValue: 96, useNativeDriver: true }).start();
+        } else if (g.dx < -45) {
+          setOpenSide("delete");
+          Animated.spring(x, { toValue: -96, useNativeDriver: true }).start();
+        } else close();
+      },
+    }),
+  ).current;
+  const runEdit = () => {
+    close();
+    onEdit();
+  };
+  const runDelete = () => {
+    close();
+    onDelete();
+  };
+  return (
+    <View style={S.gestureWrap}>
+      <Pressable onPress={runEdit} style={S.swipeEdit}>
+        <Text style={S.swipeActionText}>Rediger</Text>
+      </Pressable>
+      <Pressable onPress={runDelete} style={S.swipeDelete}>
+        <Text style={S.swipeActionText}>Slett</Text>
+      </Pressable>
+      <Animated.View
+        {...pan.panHandlers}
+        style={{ transform: [{ translateX: x }] }}
+      >
+        <Pressable
+          onPress={openSide ? close : onPress}
+          style={[S.budgetLine, S.swipeForeground]}
+        >
+          <View style={S.smallIcon}>
+            <Ionicons name={icon} size={19} color={C.green} />
+          </View>
+          <View style={S.flex}>
+            <Text style={S.cardTitle}>{name}</Text>
+            {sub ? <Text style={S.cardSub}>{sub}</Text> : null}
+          </View>
+          <View style={S.right}>
+            <Text style={S.value}>{kr(value)}</Text>
+            <Text style={S.per}>per mnd</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={C.green} />
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
+function InsuranceView({
+  annual,
+  togglePeriod,
+  items,
+  add,
+  del,
+  edit,
+}: {
+  annual: boolean;
+  togglePeriod: () => void;
+  items: Insurance[];
+  add: () => void;
+  del: (i: string, t: string) => void;
+  edit: (id: string) => void;
+}) {
+  const [selected, setSelected] = useState<Insurance | null>(null);
+  const [sort, setSort] = useState<SortMode>("cost-desc");
+  return (
+    <>
+      <Summary
+        annual={annual}
+        togglePeriod={togglePeriod}
+        k="SAMLET FORSIKRING"
+        a={kr(items.reduce((a, b) => a + b.monthly, 0)) + "/mnd"}
+        d={countText(items.length, "registrert avtale", "registrerte avtaler")}
+      />
+      <Section title="Mine forsikringer" action="Legg til" onPress={add} />
+      <SortControl value={sort} setValue={setSort} />
+      {[...items]
+        .sort((a, b) =>
+          sort === "category-asc"
+            ? a.type.localeCompare(b.type, "nb")
+            : sort === "category-desc"
+              ? b.type.localeCompare(a.type, "nb")
+              : sort === "cost-asc"
+                ? a.monthly - b.monthly
+                : b.monthly - a.monthly,
+        )
+        .map((x) => (
+          <GestureBudgetLine
+            key={x.id}
+            icon={insIcon(x.type)}
+            name={x.type}
+            sub={`${x.provider}${x.note ? ` • ${x.note}` : ""}`}
+            value={x.monthly * (annual ? 12 : 1)}
+            period={annual ? "år" : "mnd"}
+            onPress={() => setSelected(x)}
+            onEdit={() => edit(x.id)}
+            onDelete={() => del(x.id, x.type)}
+          />
+        ))}
+      <Modal
+        visible={selected !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setSelected(null)}
+      >
+        <View style={S.insuranceModalRoot}>
+          <Pressable
+            style={S.insuranceModalBackdrop}
+            onPress={() => setSelected(null)}
+          />
+          {selected ? (
+            <View style={S.insuranceModalCard}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={S.insuranceModalContent}
+              >
+                <View style={S.modalHead}>
+                  <View style={S.flex}>
+                    <Text style={S.greenKicker}>FORSIKRING</Text>
+                    <Text style={S.modalTitle}>{selected.type}</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setSelected(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Lukk"
+                    style={S.closeCircle}
+                  >
+                    <Ionicons name="close" size={22} color={C.ink} />
+                  </Pressable>
+                </View>
+                <View style={S.insProviderRow}>
+                  <View style={S.insProviderIcon}>
+                    <Ionicons
+                      name={insIcon(selected.type)}
+                      size={22}
+                      color={C.green}
+                    />
+                  </View>
+                  <View>
+                    <Text style={S.insEyebrow}>SELSKAP</Text>
+                    <Text style={S.insProvider}>{selected.provider}</Text>
+                  </View>
+                </View>
+                <View style={S.insPricePanel}>
+                  <View>
+                    <Text style={S.insEyebrow}>NORMALISERT PRIS</Text>
+                    <Text style={S.insPrice}>
+                      {kr(selected.monthly)}
+                      <Text style={S.insPriceUnit}>/mnd</Text>
+                    </Text>
+                  </View>
+                  <View style={S.insAnnual}>
+                    <Text style={S.insAnnualLabel}>Per år</Text>
+                    <Text style={S.insAnnualValue}>
+                      {kr(selected.monthly * 12)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={S.insSection}>
+                  <Text style={S.insSectionTitle}>Premie</Text>
+                  <InsuranceFact
+                    label="Registrert beløp"
+                    value={`${kr(selected.registeredAmount ?? selected.monthly)} • ${(selected.registeredPeriod ?? "month") === "year" ? "per år" : (selected.registeredPeriod ?? "month") === "quarter" ? "per kvartal" : "per måned"}`}
+                  />
+                </View>
+                <View style={S.insSection}>
+                  <Text style={S.insSectionTitle}>Avtalen</Text>
+                  <InsuranceFact
+                    label="Dekning"
+                    value={
+                      selected.coverage ||
+                      selected.coverageType ||
+                      "Ikke registrert"
+                    }
+                  />
+                  <InsuranceFact
+                    label="Fornyelse"
+                    value={
+                      selected.expiryDate ||
+                      selected.renewal ||
+                      "Ikke registrert"
+                    }
+                  />
+                  <InsuranceFact
+                    label="Egenandel"
+                    value={selected.deductible || "Ikke registrert"}
+                  />
+                </View>
+                <View style={S.insSection}>
+                  <Text style={S.insSectionTitle}>Notat</Text>
+                  <Text style={S.insNoteText}>
+                    {selected.note || "Ikke registrert"}
+                  </Text>
+                </View>
+                <View style={S.insSection}>
+                  <Text style={S.insSectionTitle}>Flere detaljer</Text>
+                  <InsuranceFact
+                    label="Bonus"
+                    value={selected.bonus || "Ikke registrert"}
+                  />
+                  <InsuranceFact
+                    label="Forsikringssum"
+                    value={
+                      selected.insuredValue
+                        ? `${selected.insuredValue} ${selected.insuredValueUnit === "G" ? "G" : "kr"}`
+                        : "Ikke registrert"
+                    }
+                  />
+                  <InsuranceFact
+                    label="Tegningsdato"
+                    value={selected.startDate || "Ikke registrert"}
+                  />
+                </View>
+                <View style={S.insBudgetTag}>
+                  <Ionicons name="checkmark-circle" size={17} color={C.green} />
+                  <Text style={S.insBudgetTagText}>Lagt til i budsjett</Text>
+                </View>
+                <View style={S.popupActions}>
+                  <Pressable
+                    onPress={() => {
+                      const id = selected.id;
+                      setSelected(null);
+                      edit(id);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Rediger"
+                    style={S.insEditAction}
+                  >
+                    <Ionicons name="pencil-outline" size={18} color={C.green} />
+                    <Text style={S.insEditActionText}>Rediger</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      const current = selected;
+                      setSelected(null);
+                      del(current.id, current.type);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Slett"
+                    style={S.insDeleteAction}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={C.red} />
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
+    </>
+  );
+}
+function InsuranceFact({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={S.insFact}>
+      <Text style={S.insFactLabel}>{label}</Text>
+      <Text style={S.insFactValue}>{value}</Text>
+    </View>
+  );
+}
+function Subscriptions({
+  annual,
+  togglePeriod,
+  items,
+  add,
+  del,
+  edit,
+}: {
+  annual: boolean;
+  togglePeriod: () => void;
+  items: Subscription[];
+  add: () => void;
+  del: (i: string, t: string) => void;
+  edit: (id: string) => void;
+}) {
+  const [selected, setSelected] = useState<Subscription | null>(null);
+  const [sort, setSort] = useState<SortMode>("cost-desc");
+  const periodLabel = (p: Period) =>
+    p === "year" ? "Per år" : p === "quarter" ? "Per kvartal" : "Per måned";
+  return (
+    <>
+      <Summary
+        annual={annual}
+        togglePeriod={togglePeriod}
+        k="LØPENDE ABONNEMENT"
+        a={kr(items.reduce((a, b) => a + b.monthly, 0)) + "/mnd"}
+        d={kr(items.reduce((a, b) => a + b.monthly * 12, 0)) + "/år"}
+      />
+      <Section title="Mine abonnement" action="Legg til" onPress={add} />
+      <SortControl value={sort} setValue={setSort} />
+      {[...items]
+        .sort((a, b) =>
+          sort === "category-asc"
+            ? a.category.localeCompare(b.category, "nb")
+            : sort === "category-desc"
+              ? b.category.localeCompare(a.category, "nb")
+              : sort === "cost-asc"
+                ? a.monthly - b.monthly
+                : b.monthly - a.monthly,
+        )
+        .map((x) => (
+          <GestureBudgetLine
+            key={x.id}
+            icon={subIcon(`${x.name} ${x.category}`)}
+            name={x.name}
+            sub={x.category}
+            value={x.monthly * (annual ? 12 : 1)}
+            period={annual ? "år" : "mnd"}
+            onPress={() => setSelected(x)}
+            onEdit={() => edit(x.id)}
+            onDelete={() => del(x.id, x.name)}
+          />
+        ))}
+      <Modal
+        visible={selected !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setSelected(null)}
+      >
+        <View style={S.insuranceModalRoot}>
+          <Pressable
+            style={S.insuranceModalBackdrop}
+            onPress={() => setSelected(null)}
+          />
+          {selected ? (
+            <View style={S.insuranceModalCard}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={S.insuranceModalContent}
+              >
+                <View style={S.modalHead}>
+                  <View style={S.flex}>
+                    <Text style={S.greenKicker}>ABONNEMENT</Text>
+                    <Text style={S.modalTitle}>{selected.name}</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setSelected(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Lukk"
+                    style={S.closeCircle}
+                  >
+                    <Ionicons name="close" size={22} color={C.ink} />
+                  </Pressable>
+                </View>
+                <View style={S.insProviderRow}>
+                  <View style={S.insProviderIcon}>
+                    <Ionicons
+                      name={subIcon(`${selected.name} ${selected.category}`)}
+                      size={22}
+                      color={C.green}
+                    />
+                  </View>
+                  <View>
+                    <Text style={S.insEyebrow}>KATEGORI</Text>
+                    <Text style={S.insProvider}>{selected.category}</Text>
+                  </View>
+                </View>
+                <View style={S.insPricePanel}>
+                  <View>
+                    <Text style={S.insEyebrow}>NORMALISERT PRIS</Text>
+                    <Text style={S.insPrice}>
+                      {kr(selected.monthly)}
+                      <Text style={S.insPriceUnit}>/mnd</Text>
+                    </Text>
+                  </View>
+                  <View style={S.insAnnual}>
+                    <Text style={S.insAnnualLabel}>Per år</Text>
+                    <Text style={S.insAnnualValue}>
+                      {kr(selected.monthly * 12)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={S.insSection}>
+                  <Text style={S.insSectionTitle}>Betaling</Text>
+                  <InsuranceFact
+                    label="Registrert beløp"
+                    value={`${kr(selected.registeredAmount ?? selected.monthly)} • ${periodLabel(selected.registeredPeriod ?? "month").toLowerCase()}`}
+                  />
+                  <InsuranceFact
+                    label="Neste betaling / fornyelse"
+                    value={selected.renewal || "Ikke registrert"}
+                  />
+                </View>
+                <View style={S.insBudgetTag}>
+                  <Ionicons name="checkmark-circle" size={17} color={C.green} />
+                  <Text style={S.insBudgetTagText}>Lagt til i budsjett</Text>
+                </View>
+                <View style={S.popupActions}>
+                  <Pressable
+                    onPress={() => {
+                      const id = selected.id;
+                      setSelected(null);
+                      edit(id);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Rediger"
+                    style={S.insEditAction}
+                  >
+                    <Ionicons name="pencil-outline" size={18} color={C.green} />
+                    <Text style={S.insEditActionText}>Rediger</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      const current = selected;
+                      setSelected(null);
+                      del(current.id, current.name);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Slett"
+                    style={S.insDeleteAction}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={C.red} />
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+function Savings({
+  annual,
+  togglePeriod,
+  goals,
+  add,
+  del,
+  edit,
+  update,
+}: {
+  annual: boolean;
+  togglePeriod: () => void;
+  goals: Goal[];
+  add: () => void;
+  del: (i: string, t: string) => void;
+  edit: (id: string) => void;
+  update: (i: string, n: number) => void;
+}) {
+  const [sort, setSort] = useState<SortMode>("cost-desc");
+  const baseGroups: GoalCategory[] = [
+    "Sparemål",
+    "Buffer",
+    "Fond",
+    "Aksjer",
+    "Pensjon",
+  ];
+  const groups = [...baseGroups].sort((a, b) =>
+    sort === "category-desc"
+      ? b.localeCompare(a, "nb")
+      : a.localeCompare(b, "nb"),
+  );
+  return (
+    <>
+      <Summary
+        annual={annual}
+        togglePeriod={togglePeriod}
+        k="FAST SPARING"
+        a={kr(goals.reduce((a, b) => a + b.monthly, 0)) + "/mnd"}
+        d={kr(goals.reduce((a, b) => a + b.saved, 0)) + " satt inn totalt"}
+      />
+      <Section title="Sparing og investering" action="Legg til" onPress={add} />
+      <SortControl value={sort} setValue={setSort} />
+      {groups.map((c) => {
+        const list = goals
+          .filter((g) => g.category === c)
+          .sort((a, b) =>
+            sort === "cost-asc"
+              ? a.monthly - b.monthly || a.saved - b.saved
+              : b.monthly - a.monthly || b.saved - a.saved,
+          );
+        return list.length ? (
+          <View key={c}>
+            <Text style={S.groupTitle}>{c}</Text>
+            {list.map((g) => (
+              <GoalCard
+                key={g.id}
+                annual={annual}
+                g={g}
+                del={() => del(g.id, g.name)}
+                edit={() => edit(g.id)}
+                update={(n) => update(g.id, n)}
+              />
+            ))}
+          </View>
+        ) : null;
+      })}
+    </>
+  );
+}
+function GoalCard({
+  g,
+  annual,
+  del,
+  edit,
+  update,
+}: {
+  g: Goal;
+  annual: boolean;
+  del: () => void;
+  edit: () => void;
+  update: (n: number) => void;
+}) {
+  const [pay, setPay] = useState(Math.max(500, g.monthly || 1000));
+  const [showExtra, setShowExtra] = useState(false);
+  const usesTarget = goalUsesTarget(g.category);
+  const hasTarget = g.target > 0;
+  const pct = hasTarget ? Math.round((g.saved / g.target) * 100) : 0;
+  const remaining = Math.max(0, g.target - g.saved);
+  const months =
+    usesTarget && hasTarget && remaining > 0 && g.monthly > 0
+      ? Math.ceil(remaining / g.monthly)
+      : null;
+  const forecast = !usesTarget
+    ? g.category === "Pensjon"
+      ? "Langsiktig pensjonssparing uten krav om måloppnåelse"
+      : `Fast ${g.category.toLowerCase()}sparing uten krav om måloppnåelse`
+    : !hasTarget
+      ? "Legg inn et målbeløp for å se prognose"
+      : remaining <= 0
+        ? "Målet er nådd"
+        : months !== null
+          ? `Ca. ${durationText(months)} igjen med dagens sparing`
+          : "Legg inn fast månedlig sparing for å se prognose";
+  const targetDate = parseDate(g.targetDate);
+  const now = new Date();
+  const monthsToDate = targetDate
+    ? Math.max(
+        0,
+        (targetDate.getFullYear() - now.getFullYear()) * 12 +
+          (targetDate.getMonth() - now.getMonth()) +
+          (targetDate.getDate() > now.getDate() ? 1 : 0),
+      )
+    : 0;
+  const requiredMonthly =
+    usesTarget && hasTarget && remaining > 0 && monthsToDate > 0
+      ? Math.ceil(remaining / monthsToDate)
+      : null;
+  const planText =
+    !usesTarget || !hasTarget || !targetDate
+      ? ""
+      : remaining <= 0
+        ? "Målbeløpet er allerede nådd."
+        : monthsToDate <= 0
+          ? "Måldatoen er passert."
+          : requiredMonthly !== null
+            ? g.monthly >= requiredMonthly
+              ? `Du ligger i rute. Minst ca. ${kr(requiredMonthly)}/mnd trengs frem til måldatoen.`
+              : `For å nå målet innen måldatoen bør du spare ca. ${kr(requiredMonthly)}/mnd. Det er ca. ${kr(requiredMonthly - g.monthly)}/mnd mer enn dagens sparing.`
+            : "";
+  return (
+    <View style={S.goal}>
+      {g.imageUri ? (
+        <ImageBackground
+          source={{ uri: g.imageUri }}
+          style={S.goalImage}
+          imageStyle={S.goalImageInner}
+        >
+          <View style={S.overlay} />
+          <View style={S.goalText}>
+            <Text style={S.goalLight}>{g.name}</Text>
+            <Text style={S.goalMeta}>
+              {g.category}
+              {g.targetDate ? ` • ${g.targetDate}` : ""}
+            </Text>
+          </View>
+        </ImageBackground>
+      ) : (
+        <View style={S.goalFallback}>
+          <Ionicons name={goalIcon(g)} size={32} color={C.green} />
+          <View style={S.flex}>
+            <Text style={S.groupTitle}>{g.name}</Text>
+            <Text style={S.cardSub}>
+              {g.category}
+              {g.targetDate ? ` • ${g.targetDate}` : ""}
+            </Text>
+          </View>
+        </View>
+      )}
+      <View style={S.trashFloat}>
+        <Pressable
+          onPress={edit}
+          accessibilityRole="button"
+          accessibilityLabel={`Rediger ${g.name}`}
+          style={S.editMini}
+        >
+          <Ionicons name="pencil-outline" size={18} color={C.green} />
+        </Pressable>
+        <Trash onPress={del} />
+      </View>
+      <View style={S.goalBody}>
+        <Text style={S.goalMonthly}>
+          Fast {kr(Math.round(g.monthly * (annual ? 12 : 1)))}/
+          {annual ? "år" : "mnd"}
+        </Text>
+        <Text style={S.goalSaved}>
+          Totalt satt inn: {kr(g.saved)}
+          {usesTarget && hasTarget ? (
+            <Text style={S.goalTarget}> av {kr(g.target)}</Text>
+          ) : null}
+        </Text>
+        {usesTarget && hasTarget ? (
+          <>
+            <Progress val={Math.min(100, pct)} />
+            <Text style={S.cardSub}>
+              {pct}% • fast {kr(g.monthly)}/mnd • lagt til i budsjettet
+            </Text>
+          </>
+        ) : (
+          <Text style={S.cardSub}>
+            Fast {kr(g.monthly)}/mnd • lagt til i budsjettet
+          </Text>
+        )}
+        <View style={S.goalForecast}>
+          <Ionicons
+            name={
+              remaining <= 0 && usesTarget && hasTarget
+                ? "checkmark-circle-outline"
+                : "time-outline"
+            }
+            size={18}
+            color={C.green}
+          />
+          <Text style={S.goalForecastText}>{forecast}</Text>
+        </View>
+        {planText ? (
+          <View style={S.goalPlan}>
+            <Ionicons
+              name={
+                g.monthly >= Number(requiredMonthly || 0)
+                  ? "checkmark-circle-outline"
+                  : "calculator-outline"
+              }
+              size={18}
+              color={C.green}
+            />
+            <Text style={S.goalPlanText}>{planText}</Text>
+          </View>
+        ) : null}
+        <Pressable
+          onPress={() => setShowExtra((v) => !v)}
+          style={S.extraToggle}
+        >
+          <Text style={S.extraToggleText}>
+            {showExtra
+              ? "Skjul ekstra innbetaling"
+              : "Legg til ekstra innbetaling"}
+          </Text>
+          <Ionicons
+            name={showExtra ? "chevron-up" : "chevron-down"}
+            size={17}
+            color={C.green}
+          />
+        </Pressable>
+        {showExtra ? (
+          <View style={S.sliderBox}>
+            <View style={S.rowBetween}>
+              <Text style={S.cardSub}>Ekstra innbetaling</Text>
+              <Text style={S.value}>{kr(pay)}</Text>
+            </View>
+            <Slider
+              minimumValue={0}
+              maximumValue={10000}
+              step={100}
+              value={pay}
+              onValueChange={setPay}
+              minimumTrackTintColor={C.green}
+              maximumTrackTintColor="#D9E2DD"
+              thumbTintColor={C.green}
+            />
+            <Pressable
+              onPress={() => {
+                update(pay);
+                setShowExtra(false);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Registrer ekstra innbetaling"
+              style={S.primarySmall}
+            >
+              <Text style={S.primaryText}>Registrer innbetaling</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function Form({
+  kind,
+  initial,
+  editing,
+  close,
+  saveInsurance,
+  saveSubscription,
+  saveGoal,
+  saveIncome,
+  saveExpense,
+}: {
+  kind: FormKind;
+  initial?: any;
+  editing: boolean;
+  close: () => void;
+  saveInsurance: (x: Omit<Insurance, "id">) => void;
+  saveSubscription: (x: Omit<Subscription, "id">) => void;
+  saveGoal: (x: Omit<Goal, "id">) => void;
+  saveIncome: (x: Omit<BudgetItem, "id">) => void;
+  saveExpense: (x: Omit<BudgetItem, "id">) => void;
+}) {
+  const [f, setF] = useState<Record<string, string>>({});
+  const [cat, setCat] = useState<GoalCategory>("Sparemål");
+  const [moreInsurance, setMoreInsurance] = useState(false);
+  const [expenseGroup, setExpenseGroup] = useState<string | null>(null);
+  const [incomeGroup, setIncomeGroup] = useState<string | null>(null);
+  const [subscriptionGroup, setSubscriptionGroup] = useState<string | null>(
+    null,
+  );
+  const [incomePeriod, setIncomePeriod] = useState<Period>("month");
+  const [expensePeriod, setExpensePeriod] = useState<Period>("month");
+  const [subscriptionPeriod, setSubscriptionPeriod] = useState<Period>("month");
+  const [showSubscriptionDate, setShowSubscriptionDate] = useState(false);
+  const [insurancePeriod, setInsurancePeriod] = useState<Period>("month");
+  const [showInsuranceStartDate, setShowInsuranceStartDate] = useState(false);
+  const [showInsuranceExpiryDate, setShowInsuranceExpiryDate] = useState(false);
+  const [showGoalDate, setShowGoalDate] = useState(false);
+  const [insuredValueUnit, setInsuredValueUnit] =
+    useState<InsuredValueUnit>("kr");
+  const [atBottom, setAtBottom] = useState(false);
+  const incomeTypes: [string, string[]][] = [
+    ["Arbeid", ["Lønn", "Overtid / tillegg", "Bonus", "Næringsinntekt"]],
+    [
+      "Trygd",
+      [
+        "Barnetrygd",
+        "Kontantstøtte",
+        "Foreldrepenger",
+        "Barnebidrag",
+        "Sykepenger",
+        "Dagpenger",
+        "Pensjon",
+        "NAV / trygd",
+      ],
+    ],
+    ["Studier", ["Stipend", "Studielån"]],
+    ["Kapital og eiendom", ["Leieinntekt", "Renteinntekt", "Utbytte"]],
+    ["Annet", ["Annen inntekt"]],
+  ];
+  const expenseTypes: [string, string[]][] = [
+    ["Bolig", ["Boliglån", "Husleie", "Strøm", "Kommunale avgifter"]],
+    [
+      "Forsikringer",
+      [
+        "Husforsikring",
+        "Innboforsikring",
+        "Bilforsikring",
+        "Reiseforsikring",
+        "Livsforsikring",
+        "Ulykkesforsikring",
+        "Annen forsikring",
+      ],
+    ],
+    [
+      "Abonnement",
+      [
+        "Mobil",
+        "Internett",
+        "TV / streaming",
+        "Musikk",
+        "Skylagring",
+        "Programvare",
+        "Avis / nyheter",
+        "Gaming",
+        "Annet abonnement",
+      ],
+    ],
+    ["Mat og husholdning", ["Mat og dagligvarer", "Husholdningsartikler"]],
+    ["Barn", ["Barnehage / SFO", "Klær og utstyr", "Fritidsaktiviteter"]],
+    [
+      "Transport",
+      ["Billån", "Drivstoff / lading", "Bom / parkering", "Kollektivtransport"],
+    ],
+    ["Gjeld", ["Studielån", "Kredittkort / lån"]],
+    [
+      "Helse og fritid",
+      [
+        "Medisiner / behandling",
+        "Trening",
+        "Restaurant / takeaway",
+        "Klær og sko",
+      ],
+    ],
+    ["Annet", ["Gaver", "Kjæledyr", "Uforutsette utgifter", "Annen utgift"]],
+  ];
+  const insuranceTypes = [
+    "Husforsikring",
+    "Innboforsikring",
+    "Bilforsikring",
+    "Reiseforsikring",
+    "Livsforsikring",
+    "Ulykkesforsikring",
+    "Dyreforsikring",
+    "Annen forsikring",
+  ];
+  const insuranceProviders = [
+    "DNB",
+    "Gjensidige",
+    "If",
+    "Tryg",
+    "Fremtind",
+    "Frende",
+    "Storebrand",
+    "KLP",
+    "Eika",
+    "JBF",
+    "WaterCircles",
+    "Annet selskap",
+  ];
+  const subscriptionTypes: [string, string[]][] = [
+    [
+      "TV / streaming",
+      [
+        "Netflix",
+        "Max",
+        "Disney+",
+        "TV 2 Play",
+        "Viaplay",
+        "YouTube Premium",
+        "Annen strømmetjeneste",
+      ],
+    ],
+    [
+      "Musikk",
+      [
+        "Spotify",
+        "Apple Music",
+        "YouTube Music",
+        "Tidal",
+        "Annen musikktjeneste",
+      ],
+    ],
+    [
+      "Mobil",
+      [
+        "Telenor",
+        "Telia",
+        "ice",
+        "Talkmore",
+        "OneCall",
+        "Chilimobil",
+        "Annet mobilabonnement",
+      ],
+    ],
+    [
+      "Internett",
+      [
+        "Telenor",
+        "Telia",
+        "Altibox",
+        "NextGenTel",
+        "GlobalConnect",
+        "Annet internettabonnement",
+      ],
+    ],
+    [
+      "Programvare",
+      ["Microsoft 365", "Adobe", "Google One", "Dropbox", "Annen programvare"],
+    ],
+    [
+      "Gaming",
+      [
+        "PlayStation Plus",
+        "Xbox Game Pass",
+        "Nintendo Switch Online",
+        "EA Play",
+        "Annet gamingabonnement",
+      ],
+    ],
+    [
+      "Avis / nyheter",
+      ["VG+", "Aftenposten", "DN", "Tønsbergs Blad", "Annet nyhetsabonnement"],
+    ],
+    [
+      "Skylagring",
+      ["iCloud+", "Google One", "Dropbox", "OneDrive", "Annen skylagring"],
+    ],
+    ["Trening", ["Treningssenter", "Treningsapp", "Annet treningsabonnement"]],
+    ["Annet", ["Annet abonnement"]],
+  ];
+  const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
+  useEffect(() => {
+    const i = initial || {};
+    setF(
+      kind === "insurance"
+        ? {
+            name: i.type || "",
+            provider: i.provider || "",
+            monthly:
+              (i.registeredAmount ?? i.monthly)
+                ? groupDigits(String(i.registeredAmount ?? i.monthly))
+                : "",
+            bonus: i.bonus || "",
+            coverageType: i.coverageType || i.coverage || "",
+            insuredValue: i.insuredValue || "",
+            deductible: i.deductible || "",
+            startDate: i.startDate || "",
+            expiryDate: i.expiryDate || i.renewal || "",
+            note: i.note || "",
+          }
+        : kind === "subscription"
+          ? {
+              name: i.name || "",
+              category: i.category || "",
+              monthly:
+                (i.registeredAmount ?? i.monthly)
+                  ? groupDigits(String(i.registeredAmount ?? i.monthly))
+                  : "",
+              date: i.renewal || "",
+            }
+          : kind === "goal"
+            ? {
+                name: i.name || "",
+                monthly: i.monthly ? groupDigits(String(i.monthly)) : "",
+                target: i.target ? groupDigits(String(i.target)) : "",
+                saved: i.saved ? groupDigits(String(i.saved)) : "",
+                date: i.targetDate || "",
+              }
+            : kind === "income"
+              ? {
+                  category: i.category || "",
+                  origin: i.origin || "",
+                  monthly:
+                    (i.registeredAmount ?? i.monthly)
+                      ? groupDigits(String(i.registeredAmount ?? i.monthly))
+                      : "",
+                }
+              : kind === "expense"
+                ? {
+                    name: i.name || "",
+                    category: i.category || "",
+                    monthly:
+                      (i.registeredAmount ?? i.monthly)
+                        ? groupDigits(String(i.registeredAmount ?? i.monthly))
+                        : "",
+                    interest: i.interest ? groupDigits(String(i.interest)) : "",
+                    principal: i.principal
+                      ? groupDigits(String(i.principal))
+                      : "",
+                    provider: i.origin || "",
+                  }
+                : {},
+    );
+    setCat(i.category || "Sparemål");
+    setMoreInsurance(
+      !!(
+        i.bonus ||
+        i.coverageType ||
+        i.insuredValue ||
+        i.deductible ||
+        i.startDate ||
+        i.expiryDate ||
+        i.note
+      ),
+    );
+    setExpenseGroup(kind === "expense" && i.category ? i.category : null);
+    setIncomeGroup(
+      kind === "income" && i.category
+        ? incomeTypes.find(([, items]) => items.includes(i.category))?.[0] ||
+            null
+        : null,
+    );
+    setSubscriptionGroup(
+      kind === "subscription" && i.category ? i.category : null,
+    );
+    setSubscriptionPeriod(
+      kind === "subscription" ? i.registeredPeriod || "month" : "month",
+    );
+    setShowSubscriptionDate(false);
+    setInsurancePeriod(
+      kind === "insurance" ? i.registeredPeriod || "month" : "month",
+    );
+    setShowInsuranceStartDate(false);
+    setShowInsuranceExpiryDate(false);
+    setIncomePeriod(
+      kind === "income" ? i.registeredPeriod || "month" : "month",
+    );
+    setExpensePeriod(
+      kind === "expense" ? i.registeredPeriod || "month" : "month",
+    );
+    setInsuredValueUnit(
+      kind === "insurance" ? i.insuredValueUnit || "kr" : "kr",
+    );
+  }, [kind, initial]);
+  if (!kind) return null;
+  const submit = () => {
+    if (kind === "insurance") {
+      const amount = num(f.monthly);
+      const monthly =
+        insurancePeriod === "quarter"
+          ? amount / 3
+          : insurancePeriod === "year"
+            ? amount / 12
+            : amount;
+      return saveInsurance({
+        type: f.name || "Forsikring",
+        provider: f.provider || "Ikke registrert",
+        monthly,
+        registeredAmount: amount,
+        registeredPeriod: insurancePeriod,
+        coverage: f.coverageType || "",
+        renewal: f.expiryDate || "",
+        bonus: f.bonus,
+        coverageType: f.coverageType,
+        insuredValue: f.insuredValue,
+        insuredValueUnit,
+        deductible: f.deductible,
+        startDate: f.startDate,
+        expiryDate: f.expiryDate,
+        note: f.note,
+      });
+    }
+    if (kind === "subscription") {
+      const amount = num(f.monthly);
+      const monthly =
+        subscriptionPeriod === "quarter"
+          ? amount / 3
+          : subscriptionPeriod === "year"
+            ? amount / 12
+            : amount;
+      return saveSubscription({
+        name: f.name || "Abonnement",
+        category: f.category || "Annet",
+        monthly,
+        renewal: f.date || "",
+        registeredAmount: amount,
+        registeredPeriod: subscriptionPeriod,
+      });
+    }
+    if (kind === "goal")
+      return saveGoal({
+        name: f.name || cat,
+        target: num(f.target),
+        saved: num(f.saved),
+        targetDate: f.date || "",
+        category: cat,
+        monthly: num(f.monthly),
+      });
+    if (kind === "income") {
+      const amount = num(f.monthly);
+      const monthly =
+        incomePeriod === "quarter"
+          ? amount / 3
+          : incomePeriod === "year"
+            ? amount / 12
+            : amount;
+      return saveIncome({
+        name: f.category || "Inntekt",
+        category: f.category || "Annen inntekt",
+        monthly,
+        registeredAmount: amount,
+        registeredPeriod: incomePeriod,
+        origin: f.origin || undefined,
+        note: f.note || undefined,
+      });
+    }
+    const typed = f.name?.trim() || "Utgift";
+    const matched = expenseTypes
+      .flatMap(([group, items]) => items.map((name) => ({ group, name })))
+      .find(
+        (x) =>
+          x.name.toLocaleLowerCase("nb-NO") ===
+          typed.toLocaleLowerCase("nb-NO"),
+      );
+    const detectedCategory = matched?.group || f.category || "Annet";
+    const isDetectedMortgage =
+      matched?.name === "Boliglån" ||
+      typed.toLocaleLowerCase("nb-NO") === "boliglån";
+    const amount = isDetectedMortgage
+      ? num(f.interest) + num(f.principal)
+      : num(f.monthly);
+    const period: Period = isDetectedMortgage ? "month" : expensePeriod;
+    const monthly =
+      period === "quarter"
+        ? amount / 3
+        : period === "year"
+          ? amount / 12
+          : amount;
+    return saveExpense({
+      name: matched?.name || typed,
+      category: detectedCategory,
+      monthly,
+      registeredAmount: amount,
+      registeredPeriod: period,
+      origin:
+        detectedCategory === "Forsikringer"
+          ? f.provider || "Ikke registrert"
+          : undefined,
+      interest: isDetectedMortgage ? num(f.interest) : undefined,
+      principal: isDetectedMortgage ? num(f.principal) : undefined,
+      note: f.note || undefined,
+    });
+  };
+  const title =
+    kind === "insurance"
+      ? "forsikring"
+      : kind === "subscription"
+        ? "abonnement"
+        : kind === "goal"
+          ? "sparing"
+          : kind === "income"
+            ? "inntekt"
+            : "utgift";
+  return (
+    <Modal visible transparent animationType="slide">
+      <KeyboardAvoidingView
+        style={S.modalWrap}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={S.backdrop} onPress={close} />
+        <View style={S.modal}>
+          <View style={S.modalHead}>
+            <Text style={S.modalTitle}>
+              {editing ? "Rediger" : "Legg til"} {title}
+            </Text>
+            <Pressable onPress={close}>
+              <Ionicons name="close" size={24} />
+            </Pressable>
+          </View>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={S.formScroll}
+            onScroll={({ nativeEvent }) => {
+              const { layoutMeasurement, contentOffset, contentSize } =
+                nativeEvent;
+              setAtBottom(
+                layoutMeasurement.height + contentOffset.y >=
+                  contentSize.height - 40,
+              );
+            }}
+            scrollEventThrottle={16}
+          >
+            {kind === "income" ? (
+              <>
+                <Text style={S.formLabel}>Inntektstype</Text>
+                {!incomeGroup ? (
+                  <View style={S.categoryGrid}>
+                    {incomeTypes.map(([group]) => (
+                      <Pressable
+                        key={group}
+                        onPress={() => setIncomeGroup(group)}
+                        style={S.categoryChoice}
+                      >
+                        <Text style={S.categoryChoiceText}>{group}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <>
+                    <Pressable
+                      onPress={() => setIncomeGroup(null)}
+                      style={S.categoryBack}
+                    >
+                      <Ionicons name="chevron-back" size={18} color={C.green} />
+                      <Text style={S.categoryBackText}>Alle kategorier</Text>
+                    </Pressable>
+                    <Text style={S.expenseSelectedTitle}>{incomeGroup}</Text>
+                    <View style={S.expenseOptionList}>
+                      {(
+                        incomeTypes.find(([g]) => g === incomeGroup)?.[1] || []
+                      ).map((t) => (
+                        <Pressable
+                          key={t}
+                          onPress={() => {
+                            set("category", /^Annen|^Annet/i.test(t) ? "" : t);
+                            if (t === "Lønn" && incomePeriod === "quarter")
+                              setIncomePeriod("month");
+                          }}
+                          style={[
+                            S.expenseOption,
+                            f.category === t && S.expenseOptionOn,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              S.expenseOptionText,
+                              f.category === t && S.expenseOptionTextOn,
+                            ]}
+                          >
+                            {t}
+                          </Text>
+                          {f.category === t ? (
+                            <Ionicons
+                              name="checkmark"
+                              size={20}
+                              color={C.white}
+                            />
+                          ) : null}
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                )}
+                <TextInput
+                  value={f.category || ""}
+                  onChangeText={(v) => set("category", v)}
+                  placeholder="Skriv egen inntektstype (valgfritt)"
+                  style={S.input}
+                />
+                <Text style={S.formLabel}>Beløpet gjelder</Text>
+                <View style={S.chips}>
+                  {(f.category === "Lønn"
+                    ? ([
+                        ["month", "Månedslønn"],
+                        ["year", "Årslønn"],
+                      ] as const)
+                    : ([
+                        ["month", "Per måned"],
+                        ["quarter", "Per kvartal"],
+                        ["year", "Per år"],
+                      ] as const)
+                  ).map(([v, l]) => (
+                    <Pressable
+                      key={v}
+                      onPress={() => setIncomePeriod(v)}
+                      style={[S.chip, incomePeriod === v && S.chipOn]}
+                    >
+                      <Text
+                        style={[S.chipText, incomePeriod === v && S.chipTextOn]}
+                      >
+                        {l}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={f.monthly || ""}
+                  onChangeText={(v) => set("monthly", groupDigits(v))}
+                  placeholder={
+                    incomePeriod === "year"
+                      ? f.category === "Lønn"
+                        ? "Beløp utbetalt per år"
+                        : "Beløp per år"
+                      : incomePeriod === "quarter"
+                        ? "Beløp per kvartal"
+                        : f.category === "Lønn"
+                          ? "Beløp utbetalt per måned"
+                          : "Beløp per måned"
+                  }
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+                <TextInput
+                  value={f.origin || ""}
+                  onChangeText={(v) => set("origin", v)}
+                  placeholder="Utbetaler eller kilde (valgfritt)"
+                  style={S.input}
+                />
+              </>
+            ) : null}
+            {kind === "expense" ? (
+              <>
+                <Text style={S.formLabel}>Utgiftstype</Text>
+                {!expenseGroup ? (
+                  <View style={S.categoryGrid}>
+                    {expenseTypes.map(([group]) => (
+                      <Pressable
+                        key={group}
+                        onPress={() => setExpenseGroup(group)}
+                        style={S.categoryChoice}
+                      >
+                        <View style={S.categoryIcon}>
+                          <Ionicons
+                            name={
+                              group === "Bolig"
+                                ? "home-outline"
+                                : group === "Forsikringer"
+                                  ? "shield-checkmark-outline"
+                                  : group === "Abonnement"
+                                    ? "repeat-outline"
+                                    : group === "Mat og husholdning"
+                                      ? "basket-outline"
+                                      : group === "Barn"
+                                        ? "people-outline"
+                                        : group === "Transport"
+                                          ? "car-outline"
+                                          : group === "Gjeld"
+                                            ? "card-outline"
+                                            : group === "Helse og fritid"
+                                              ? "heart-outline"
+                                              : "ellipsis-horizontal-outline"
+                            }
+                            size={18}
+                            color={C.green}
+                          />
+                        </View>
+                        <Text style={S.categoryChoiceText}>{group}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <>
+                    <Pressable
+                      onPress={() => setExpenseGroup(null)}
+                      style={S.categoryBack}
+                    >
+                      <Ionicons name="chevron-back" size={18} color={C.green} />
+                      <Text style={S.categoryBackText}>Alle kategorier</Text>
+                    </Pressable>
+                    <Text style={S.expenseSelectedTitle}>{expenseGroup}</Text>
+                    <View style={S.expenseOptionList}>
+                      {(
+                        expenseTypes.find(([g]) => g === expenseGroup)?.[1] ||
+                        []
+                      ).map((t) => (
+                        <Pressable
+                          key={t}
+                          onPress={() =>
+                            setF((x) => ({
+                              ...x,
+                              name: /^Annen|^Annet/i.test(t) ? "" : t,
+                              category: expenseGroup,
+                            }))
+                          }
+                          style={[
+                            S.expenseOption,
+                            f.name === t && S.expenseOptionOn,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              S.expenseOptionText,
+                              f.name === t && S.expenseOptionTextOn,
+                            ]}
+                          >
+                            {t}
+                          </Text>
+                          {f.name === t ? (
+                            <Ionicons
+                              name="checkmark"
+                              size={20}
+                              color={C.white}
+                            />
+                          ) : null}
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                )}
+                {expenseGroup === "Forsikringer" ? (
+                  <>
+                    <Text style={S.formLabel}>Forsikringsselskap</Text>
+                    <View style={S.suggestionWrap}>
+                      {insuranceProviders.map((t) => (
+                        <Pressable
+                          key={t}
+                          onPress={() =>
+                            set("provider", t === "Annet selskap" ? "" : t)
+                          }
+                          style={[
+                            S.suggestionChip,
+                            f.provider === t && S.suggestionChipOn,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              S.suggestionText,
+                              f.provider === t && S.suggestionChipOn,
+                            ]}
+                          >
+                            {t}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <TextInput
+                      value={f.provider || ""}
+                      onChangeText={(v) => set("provider", v)}
+                      placeholder="Skriv forsikringsselskap"
+                      style={S.input}
+                    />
+                  </>
+                ) : null}
+                {f.name === "Boliglån" ? (
+                  <View style={S.mortgageBox}>
+                    <Text style={S.formLabel}>Fordel boliglånet</Text>
+                    <TextInput
+                      value={f.interest || ""}
+                      onChangeText={(v) => set("interest", groupDigits(v))}
+                      placeholder="Renter per måned"
+                      keyboardType="decimal-pad"
+                      style={S.input}
+                    />
+                    <TextInput
+                      value={f.principal || ""}
+                      onChangeText={(v) => set("principal", groupDigits(v))}
+                      placeholder="Avdrag per måned"
+                      keyboardType="decimal-pad"
+                      style={S.input}
+                    />
+                    <TextInput
+                      value={groupDigits(
+                        String(num(f.interest) + num(f.principal)),
+                      )}
+                      editable={false}
+                      placeholder="Total termin per måned"
+                      style={S.input}
+                    />
+                  </View>
+                ) : null}
+                <TextInput
+                  value={f.name || ""}
+                  onChangeText={(v) => set("name", v)}
+                  placeholder={
+                    expenseGroup && f.name === ""
+                      ? "Skriv egen utgiftstype"
+                      : "Eget navn (valgfritt)"
+                  }
+                  style={S.input}
+                />
+                {f.name !== "Boliglån" ? (
+                  <>
+                    <Text style={S.formLabel}>Kostnaden gjelder</Text>
+                    <View style={S.chips}>
+                      {(
+                        [
+                          ["month", "Per måned"],
+                          ["quarter", "Per kvartal"],
+                          ["year", "Per år"],
+                        ] as const
+                      ).map(([v, l]) => (
+                        <Pressable
+                          key={v}
+                          onPress={() => setExpensePeriod(v)}
+                          style={[S.chip, expensePeriod === v && S.chipOn]}
+                        >
+                          <Text
+                            style={[
+                              S.chipText,
+                              expensePeriod === v && S.chipTextOn,
+                            ]}
+                          >
+                            {l}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <TextInput
+                      value={f.monthly || ""}
+                      onChangeText={(v) => set("monthly", groupDigits(v))}
+                      placeholder={
+                        expensePeriod === "quarter"
+                          ? "Kostnad per kvartal"
+                          : expensePeriod === "year"
+                            ? "Kostnad per år"
+                            : "Kostnad per måned"
+                      }
+                      keyboardType="decimal-pad"
+                      style={S.input}
+                    />
+                  </>
+                ) : null}
+              </>
+            ) : null}
+            {kind === "insurance" ? (
+              <>
+                <Text style={S.formLabel}>Type forsikring</Text>
+                <View style={S.suggestionWrap}>
+                  {insuranceTypes.map((t) => (
+                    <Pressable
+                      key={t}
+                      onPress={() => set("name", /^Annen/i.test(t) ? "" : t)}
+                      style={[
+                        S.suggestionChip,
+                        f.name === t && S.suggestionChipOn,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          S.suggestionText,
+                          f.name === t && S.suggestionTextOn,
+                        ]}
+                      >
+                        {t}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={f.name || ""}
+                  onChangeText={(v) => set("name", v)}
+                  placeholder="Skriv type forsikring"
+                  style={S.input}
+                />
+                <Text style={S.formLabel}>Forsikringsselskap</Text>
+                <View style={S.suggestionWrap}>
+                  {insuranceProviders.map((t) => (
+                    <Pressable
+                      key={t}
+                      onPress={() =>
+                        set("provider", t === "Annet selskap" ? "" : t)
+                      }
+                      style={[
+                        S.suggestionChip,
+                        f.provider === t && S.suggestionChipOn,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          S.suggestionText,
+                          f.provider === t && S.suggestionChipOn,
+                        ]}
+                      >
+                        {t}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={f.provider || ""}
+                  onChangeText={(v) => set("provider", v)}
+                  placeholder="Skriv forsikringsselskap"
+                  style={S.input}
+                />
+                <Text style={S.formLabel}>Premien gjelder</Text>
+                <View style={S.chips}>
+                  {(
+                    [
+                      ["month", "Per måned"],
+                      ["quarter", "Per kvartal"],
+                      ["year", "Per år"],
+                    ] as const
+                  ).map(([v, l]) => (
+                    <Pressable
+                      key={v}
+                      onPress={() => setInsurancePeriod(v)}
+                      style={[S.chip, insurancePeriod === v && S.chipOn]}
+                    >
+                      <Text
+                        style={[
+                          S.chipText,
+                          insurancePeriod === v && S.chipTextOn,
+                        ]}
+                      >
+                        {l}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={f.monthly || ""}
+                  onChangeText={(v) => set("monthly", groupDigits(v))}
+                  placeholder={
+                    insurancePeriod === "quarter"
+                      ? "Premie per kvartal"
+                      : insurancePeriod === "year"
+                        ? "Premie per år"
+                        : "Premie per måned"
+                  }
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+                <TextInput
+                  value={f.note || ""}
+                  onChangeText={(v) => set("note", v)}
+                  placeholder="Notat (vises i oversikten)"
+                  style={S.input}
+                />
+                <Pressable
+                  onPress={() => setMoreInsurance((v) => !v)}
+                  style={S.moreButton}
+                >
+                  <Text style={S.moreButtonText}>
+                    {moreInsurance ? "Skjul detaljer" : "Flere detaljer"}
+                  </Text>
+                </Pressable>
+                {moreInsurance ? (
+                  <>
+                    <TextInput
+                      value={f.bonus || ""}
+                      onChangeText={(v) => set("bonus", v)}
+                      placeholder="Bonus"
+                      style={S.input}
+                    />
+                    <TextInput
+                      value={f.coverageType || ""}
+                      onChangeText={(v) => set("coverageType", v)}
+                      placeholder="Dekningstype"
+                      style={S.input}
+                    />
+                    <Text style={S.formLabel}>Forsikringssum</Text>
+                    <View style={S.chips}>
+                      {(["kr", "G"] as InsuredValueUnit[]).map((v) => (
+                        <Pressable
+                          key={v}
+                          onPress={() => setInsuredValueUnit(v)}
+                          style={[S.chip, insuredValueUnit === v && S.chipOn]}
+                        >
+                          <Text
+                            style={[
+                              S.chipText,
+                              insuredValueUnit === v && S.chipTextOn,
+                            ]}
+                          >
+                            {v}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <TextInput
+                      value={f.insuredValue || ""}
+                      onChangeText={(v) => set("insuredValue", groupDigits(v))}
+                      placeholder={
+                        insuredValueUnit === "G"
+                          ? "Antall G"
+                          : "Forsikringssum i kroner"
+                      }
+                      keyboardType="decimal-pad"
+                      style={S.input}
+                    />
+                    <TextInput
+                      value={f.deductible || ""}
+                      onChangeText={(v) => set("deductible", groupDigits(v))}
+                      placeholder="Egenandel"
+                      keyboardType="decimal-pad"
+                      style={S.input}
+                    />
+                    <Text style={S.formLabel}>Tegningsdato</Text>
+                    <Pressable
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setShowInsuranceStartDate(true);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Velg tegningsdato"
+                      style={S.datePickerButton}
+                    >
+                      <Text
+                        style={
+                          f.startDate
+                            ? S.datePickerValue
+                            : S.datePickerPlaceholder
+                        }
+                      >
+                        {f.startDate || "Velg tegningsdato"}
+                      </Text>
+                      <Ionicons
+                        name="calendar-outline"
+                        size={21}
+                        color={C.green}
+                      />
+                    </Pressable>
+                    {showInsuranceStartDate ? (
+                      <DateTimePicker
+                        value={parseDate(f.startDate) || new Date()}
+                        mode="date"
+                        display={Platform.OS === "ios" ? "spinner" : "default"}
+                        onValueChange={(_, d) => {
+                          if (d) set("startDate", dateText(d));
+                        }}
+                        onDismiss={() => setShowInsuranceStartDate(false)}
+                      />
+                    ) : null}
+                    <Text style={S.formLabel}>Fornyelses-/utløpsdato</Text>
+                    <Pressable
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setShowInsuranceExpiryDate(true);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Velg fornyelses- eller utløpsdato"
+                      style={S.datePickerButton}
+                    >
+                      <Text
+                        style={
+                          f.expiryDate
+                            ? S.datePickerValue
+                            : S.datePickerPlaceholder
+                        }
+                      >
+                        {f.expiryDate || "Velg fornyelses-/utløpsdato"}
+                      </Text>
+                      <Ionicons
+                        name="calendar-outline"
+                        size={21}
+                        color={C.green}
+                      />
+                    </Pressable>
+                    {showInsuranceExpiryDate ? (
+                      <DateTimePicker
+                        value={parseDate(f.expiryDate) || new Date()}
+                        mode="date"
+                        display={Platform.OS === "ios" ? "spinner" : "default"}
+                        onValueChange={(_, d) => {
+                          if (d) set("expiryDate", dateText(d));
+                        }}
+                        onDismiss={() => setShowInsuranceExpiryDate(false)}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+              </>
+            ) : null}
+            {kind === "subscription" ? (
+              <>
+                <Text style={S.formLabel}>Kategori</Text>
+                {!subscriptionGroup ? (
+                  <View style={S.categoryGrid}>
+                    {subscriptionTypes.map(([group]) => (
+                      <Pressable
+                        key={group}
+                        onPress={() => {
+                          setSubscriptionGroup(group);
+                          set("category", group);
+                          set("name", "");
+                        }}
+                        style={S.categoryChoice}
+                      >
+                        <View style={S.categoryIcon}>
+                          <Ionicons
+                            name={
+                              group === "TV / streaming"
+                                ? "play-circle-outline"
+                                : group === "Musikk"
+                                  ? "headset-outline"
+                                  : group === "Mobil"
+                                    ? "phone-portrait-outline"
+                                    : group === "Internett"
+                                      ? "wifi-outline"
+                                      : group === "Programvare"
+                                        ? "apps-outline"
+                                        : group === "Gaming"
+                                          ? "game-controller-outline"
+                                          : group === "Avis / nyheter"
+                                            ? "newspaper-outline"
+                                            : group === "Skylagring"
+                                              ? "cloud-outline"
+                                              : group === "Trening"
+                                                ? "fitness-outline"
+                                                : "ellipsis-horizontal-outline"
+                            }
+                            size={18}
+                            color={C.green}
+                          />
+                        </View>
+                        <Text style={S.categoryChoiceText}>{group}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <>
+                    <Pressable
+                      onPress={() => {
+                        setSubscriptionGroup(null);
+                        set("category", "");
+                        set("name", "");
+                      }}
+                      style={S.categoryBack}
+                    >
+                      <Ionicons name="chevron-back" size={18} color={C.green} />
+                      <Text style={S.categoryBackText}>Alle kategorier</Text>
+                    </Pressable>
+                    <Text style={S.expenseSelectedTitle}>
+                      {subscriptionGroup}
+                    </Text>
+                    <View style={S.expenseOptionList}>
+                      {(
+                        subscriptionTypes.find(
+                          ([g]) => g === subscriptionGroup,
+                        )?.[1] || []
+                      ).map((t) => (
+                        <Pressable
+                          key={t}
+                          onPress={() =>
+                            set("name", /^Annen|^Annet/i.test(t) ? "" : t)
+                          }
+                          style={[
+                            S.expenseOption,
+                            f.name === t && S.expenseOptionOn,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              S.expenseOptionText,
+                              f.name === t && S.expenseOptionTextOn,
+                            ]}
+                          >
+                            {t}
+                          </Text>
+                          {f.name === t ? (
+                            <Ionicons
+                              name="checkmark"
+                              size={20}
+                              color={C.white}
+                            />
+                          ) : null}
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                )}
+                <TextInput
+                  value={f.name || ""}
+                  onChangeText={(v) => set("name", v)}
+                  placeholder={
+                    subscriptionGroup === "Annet" || f.name === ""
+                      ? "Skriv navn på abonnement"
+                      : "Navn på abonnement"
+                  }
+                  style={S.input}
+                />
+                <Text style={S.formLabel}>Betalingsperiode</Text>
+                <View style={S.chips}>
+                  {(
+                    [
+                      ["month", "Per måned"],
+                      ["quarter", "Per kvartal"],
+                      ["year", "Per år"],
+                    ] as const
+                  ).map(([v, l]) => (
+                    <Pressable
+                      key={v}
+                      onPress={() => setSubscriptionPeriod(v)}
+                      style={[S.chip, subscriptionPeriod === v && S.chipOn]}
+                    >
+                      <Text
+                        style={[
+                          S.chipText,
+                          subscriptionPeriod === v && S.chipTextOn,
+                        ]}
+                      >
+                        {l}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={f.monthly || ""}
+                  onChangeText={(v) => set("monthly", groupDigits(v))}
+                  placeholder={
+                    subscriptionPeriod === "quarter"
+                      ? "Kostnad per kvartal"
+                      : subscriptionPeriod === "year"
+                        ? "Kostnad per år"
+                        : "Kostnad per måned"
+                  }
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+                <Text style={S.formLabel}>Neste betaling / fornyelse</Text>
+                <Pressable
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setShowSubscriptionDate(true);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Velg neste betaling eller fornyelse"
+                  style={S.datePickerButton}
+                >
+                  <Text
+                    style={f.date ? S.datePickerValue : S.datePickerPlaceholder}
+                  >
+                    {f.date || "Velg dato"}
+                  </Text>
+                  <Ionicons name="calendar-outline" size={21} color={C.green} />
+                </Pressable>
+                {showSubscriptionDate ? (
+                  <DateTimePicker
+                    value={parseDate(f.date) || new Date()}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    onValueChange={(_, d) => {
+                      if (d) set("date", dateText(d));
+                    }}
+                    onDismiss={() => setShowSubscriptionDate(false)}
+                  />
+                ) : null}
+              </>
+            ) : null}
+            {kind === "goal" ? (
+              <>
+                <Text style={S.formLabel}>Type sparing</Text>
+                <View style={S.chips}>
+                  {(
+                    [
+                      "Sparemål",
+                      "Buffer",
+                      "Fond",
+                      "Aksjer",
+                      "Pensjon",
+                    ] as GoalCategory[]
+                  ).map((x) => (
+                    <Pressable
+                      key={x}
+                      onPress={() => setCat(x)}
+                      style={[S.chip, cat === x && S.chipOn]}
+                    >
+                      <Text style={[S.chipText, cat === x && S.chipTextOn]}>
+                        {x}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={f.name || ""}
+                  onChangeText={(v) => set("name", v)}
+                  placeholder="Navn"
+                  style={S.input}
+                />
+                <TextInput
+                  value={f.monthly || ""}
+                  onChangeText={(v) => set("monthly", groupDigits(v))}
+                  placeholder="Fast månedlig sparing"
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+                {!goalUsesTargetDate(cat) ? (
+                  <View style={S.goalOptionalNote}>
+                    <Text style={S.noteText}>
+                      Målbeløp er valgfritt for {cat.toLowerCase()}. All fast
+                      sparing vises i budsjettet.
+                    </Text>
+                  </View>
+                ) : null}
+                <TextInput
+                  value={f.target || ""}
+                  onChangeText={(v) => set("target", groupDigits(v))}
+                  placeholder="Målbeløp (valgfritt)"
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+                <TextInput
+                  value={f.saved || ""}
+                  onChangeText={(v) => set("saved", groupDigits(v))}
+                  placeholder="Allerede spart"
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+                {goalUsesTargetDate(cat) ? (
+                  <>
+                    <Pressable
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setShowGoalDate(true);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Velg måldato"
+                      style={S.datePickerButton}
+                    >
+                      <Text
+                        style={
+                          f.date ? S.datePickerValue : S.datePickerPlaceholder
+                        }
+                      >
+                        {f.date || "Velg måldato"}
+                      </Text>
+                      <Ionicons
+                        name="calendar-outline"
+                        size={21}
+                        color={C.green}
+                      />
+                    </Pressable>
+                    {showGoalDate ? (
+                      <DateTimePicker
+                        value={parseDate(f.date) || new Date()}
+                        mode="date"
+                        display={Platform.OS === "ios" ? "spinner" : "default"}
+                        onValueChange={(_, d) => {
+                          if (d) set("date", dateText(d));
+                        }}
+                        onDismiss={() => setShowGoalDate(false)}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+              </>
+            ) : null}
+            <Pressable
+              onPress={submit}
+              accessibilityRole="button"
+              style={S.primary}
+            >
+              <Text style={S.primaryText}>
+                {editing ? "Lagre endringer" : "Lagre"}
+              </Text>
+            </Pressable>
+          </ScrollView>
+          {!atBottom ? (
+            <Pressable
+              onPress={submit}
+              accessibilityRole="button"
+              style={S.floatingSave}
+            >
+              <Ionicons name="checkmark" size={22} color={C.white} />
+              <Text style={S.floatingSaveText}>Lagre</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+type SortMode = "cost-desc" | "cost-asc" | "category-asc" | "category-desc";
+const sortOptions: { value: SortMode; label: string }[] = [
+  { value: "cost-desc", label: "Kostnad: høy–lav" },
+  { value: "cost-asc", label: "Kostnad: lav–høy" },
+  { value: "category-asc", label: "Kategori: A–Å" },
+  { value: "category-desc", label: "Kategori: Å–A" },
+];
+function SortControl({
+  value,
+  setValue,
+}: {
+  value: SortMode;
+  setValue: (v: SortMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <View style={S.sortRow}>
+        <Pressable
+          onPress={() => setOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Sorter"
+          style={S.sortButton}
+        >
+          <Ionicons name="funnel-outline" size={16} color={C.green} />
+          <Text style={S.sortButtonText}>Sorter</Text>
+        </Pressable>
+      </View>
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+      >
+        <View style={S.sortModalRoot}>
+          <Pressable style={S.sortBackdrop} onPress={() => setOpen(false)} />
+          <View style={S.sortSheet}>
+            <View style={S.sortSheetHead}>
+              <Text style={S.sortSheetTitle}>Sorter</Text>
+              <Pressable onPress={() => setOpen(false)} style={S.closeCircle}>
+                <Ionicons name="close" size={21} color={C.ink} />
+              </Pressable>
+            </View>
+            {sortOptions.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => {
+                  setValue(option.value);
+                  setOpen(false);
+                }}
+                style={[S.sortOption, value === option.value && S.sortOptionOn]}
+              >
+                <Text
+                  style={[
+                    S.sortOptionText,
+                    value === option.value && S.sortOptionTextOn,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                {value === option.value ? (
+                  <Ionicons name="checkmark" size={19} color={C.green} />
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+function BudgetDetail({
+  selected,
+  close,
+  annual,
+  toggle,
+}: {
+  selected: {
+    title: string;
+    category: string;
+    monthly: number;
+    details: { label: string; value: string }[];
+    onEdit?: () => void;
+    onDelete?: () => void;
+  } | null;
+  close: () => void;
+  annual: boolean;
+  toggle: () => void;
+}) {
+  return (
+    <Modal
+      visible={!!selected}
+      transparent
+      animationType="fade"
+      onRequestClose={close}
+    >
+      <View style={S.insuranceModalRoot}>
+        <Pressable style={S.insuranceModalBackdrop} onPress={close} />
+        {selected ? (
+          <View style={S.budgetDetailCard}>
+            <View style={S.modalHead}>
+              <View style={S.flex}>
+                <Text style={S.greenKicker}>BUDSJETTPOST</Text>
+                <Text style={S.modalTitle}>{selected.title}</Text>
+                <Text style={S.cardSub}>{selected.category}</Text>
+              </View>
+              <Pressable onPress={close} style={S.closeCircle}>
+                <Ionicons name="close" size={22} color={C.ink} />
+              </Pressable>
+            </View>
+            <Pressable onPress={toggle} style={S.insPricePanel}>
+              <Text style={S.insPrice}>
+                {kr(selected.monthly * (annual ? 12 : 1))}
+                <Text style={S.insPriceUnit}>{annual ? "/år" : "/mnd"}</Text>
+              </Text>
+            </Pressable>
+            {selected.details.length ? (
+              <View style={S.insSection}>
+                {selected.details.map((x) => (
+                  <InsuranceFact
+                    key={x.label}
+                    label={x.label}
+                    value={x.value}
+                  />
+                ))}
+              </View>
+            ) : null}
+            <View style={S.insBudgetTag}>
+              <Ionicons name="checkmark-circle" size={17} color={C.green} />
+              <Text style={S.insBudgetTagText}>Lagt til i budsjett</Text>
+            </View>
+            {selected.onEdit || selected.onDelete ? (
+              <View style={S.popupActions}>
+                {selected.onEdit ? (
+                  <Pressable
+                    onPress={() => {
+                      const fn = selected.onEdit;
+                      close();
+                      fn?.();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Rediger"
+                    style={S.insEditAction}
+                  >
+                    <Ionicons name="pencil-outline" size={18} color={C.green} />
+                    <Text style={S.insEditActionText}>Rediger</Text>
+                  </Pressable>
+                ) : (
+                  <View />
+                )}
+                {selected.onDelete ? (
+                  <Pressable
+                    onPress={() => {
+                      const fn = selected.onDelete;
+                      close();
+                      fn?.();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Slett"
+                    style={S.insDeleteAction}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={C.red} />
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+function Nav({ active, go }: { active: Tab; go: (t: Tab) => void }) {
+  return (
+    <View style={S.nav}>
+      {tabs.map((x) => (
+        <Pressable
+          key={x.name}
+          onPress={() => go(x.name)}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: active === x.name }}
+          accessibilityLabel={x.name}
+          style={[S.navItem, active === x.name && S.navItemOn]}
+        >
+          <Ionicons
+            name={x.icon}
+            size={21}
+            color={active === x.name ? C.green : C.muted}
+          />
+          <Text
+            numberOfLines={1}
+            style={[S.navText, active === x.name && S.navOn]}
+          >
+            {x.name}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+function MonthMetric({
+  icon,
+  label,
+  value,
+}: {
+  icon: Icon;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={S.monthMetric}>
+      <View style={S.monthMetricIcon}>
+        <Ionicons name={icon} size={19} color={C.green} />
+      </View>
+      <Text style={S.monthMetricLabel}>{label}</Text>
+      <Text style={S.monthMetricValue}>{value}</Text>
+    </View>
+  );
+}
+function Tile({
+  icon,
+  title,
+  value,
+  sub,
+  onPress,
+}: {
+  icon: Icon;
+  title: string;
+  value: string;
+  sub: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={S.tile}>
+      <View style={S.icon}>
+        <Ionicons name={icon} size={22} color={C.green} />
+      </View>
+      <View style={S.flex}>
+        <Text style={S.cardTitle}>{title}</Text>
+        <Text style={S.cardSub}>{sub}</Text>
+      </View>
+      <Text style={S.value}>{value}</Text>
+    </Pressable>
+  );
+}
+function Section({
+  title,
+  action,
+  onPress,
+}: {
+  title: string;
+  action?: string;
+  onPress?: () => void;
+}) {
+  return (
+    <View style={S.section}>
+      <Text style={S.sectionTitle}>{title}</Text>
+      {action && (
+        <Pressable onPress={onPress} style={S.add}>
+          <Ionicons name="add" size={18} color={C.green} />
+          <Text style={S.addText}>{action}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+function Summary({
+  annual,
+  togglePeriod,
+  k,
+  a,
+  d,
+}: {
+  annual: boolean;
+  togglePeriod: () => void;
+  k: string;
+  a: string;
+  d: string;
+}) {
+  const monthly = Number(
+    (a.match(/[\d\s.,]+/)?.[0] || "0").replace(/\s/g, "").replace(",", "."),
+  );
+  const canToggle = a.includes("/mnd");
+  const amount = canToggle ? kr(Math.round(monthly * (annual ? 12 : 1))) : a;
+  return (
+    <View style={S.summary}>
+      <View style={S.inlinePeriodRow}>
+        <Text style={S.kicker}>{k}</Text>
+        <PeriodControl annual={annual} toggle={togglePeriod} />
+      </View>
+      <Text style={S.summaryAmount}>{amount}</Text>
+      <Text style={S.summaryText}>{d}</Text>
+    </View>
+  );
+}
+function Detail({ l, v }: { l: string; v: string }) {
+  return (
+    <View style={S.detail}>
+      <Text style={S.detailLabel}>{l}</Text>
+      <Text style={S.detailValue}>{v}</Text>
+    </View>
+  );
+}
+function Trash({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Slett"
+      style={S.trash}
+    >
+      <Ionicons name="trash-outline" size={18} color={C.red} />
+    </Pressable>
+  );
+}
+function Progress({ val }: { val: number }) {
+  return (
+    <View style={S.track}>
+      <View style={[S.fill, { width: `${Math.min(100, val)}%` }]} />
+    </View>
+  );
+}
+function Stat({ l, v }: { l: string; v: string }) {
+  return (
+    <View style={S.flex}>
+      <Text style={S.statLabel}>{l}</Text>
+      <Text style={S.statValue}>{v}</Text>
+    </View>
+  );
+}
