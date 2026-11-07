@@ -373,9 +373,11 @@ export default function App() {
             {
               id: uid("s"),
               name: x.name || "Abonnement",
-              category: "Annet",
+              category: x.origin || "Annet",
               monthly: x.monthly,
               renewal: "",
+              registeredAmount: x.registeredAmount ?? x.monthly,
+              registeredPeriod: x.registeredPeriod ?? "month",
             },
           ],
         };
@@ -1816,7 +1818,7 @@ function Subscriptions({
             key={x.id}
             icon={subIcon(`${x.name} ${x.category}`)}
             name={x.name}
-            sub={x.category}
+            sub={x.note ? `${x.category} • ${x.note}` : x.category}
             value={x.monthly * (annual ? 12 : 1)}
             period={annual ? "år" : "mnd"}
             onPress={() => setSelected(x)}
@@ -1894,6 +1896,10 @@ function Subscriptions({
                     label="Neste betaling / fornyelse"
                     value={selected.renewal || "Ikke registrert"}
                   />
+                </View>
+                <View style={S.insSection}>
+                  <Text style={S.insSectionTitle}>Notat</Text>
+                  <InsuranceFact label="Notat" value={selected.note || "Ikke registrert"} />
                 </View>
                 <View style={S.insBudgetTag}>
                   <Ionicons name="checkmark-circle" size={17} color={C.green} />
@@ -2430,6 +2436,7 @@ function Form({
                   ? groupDigits(String(i.registeredAmount ?? i.monthly))
                   : "",
               date: i.renewal || "",
+              note: i.note || "",
             }
           : kind === "goal"
             ? {
@@ -2548,6 +2555,7 @@ function Form({
         renewal: f.date || "",
         registeredAmount: amount,
         registeredPeriod: subscriptionPeriod,
+        note: f.note || "",
       });
     }
     if (kind === "goal")
@@ -2608,7 +2616,9 @@ function Form({
       origin:
         detectedCategory === "Forsikringer"
           ? f.provider || "Ikke registrert"
-          : undefined,
+          : detectedCategory === "Abonnement"
+            ? subscriptionGroup || "Annet"
+            : undefined,
       interest: isDetectedMortgage ? num(f.interest) : undefined,
       principal: isDetectedMortgage ? num(f.principal) : undefined,
       note: f.note || undefined,
@@ -2829,43 +2839,137 @@ function Form({
                       <Text style={S.categoryBackText}>Alle kategorier</Text>
                     </Pressable>
                     <Text style={S.expenseSelectedTitle}>{expenseGroup}</Text>
-                    <View style={S.expenseOptionList}>
-                      {(
-                        expenseTypes.find(([g]) => g === expenseGroup)?.[1] ||
-                        []
-                      ).map((t) => (
-                        <Pressable
-                          key={t}
-                          onPress={() =>
-                            setF((x) => ({
-                              ...x,
-                              name: /^Annen|^Annet/i.test(t) ? "" : t,
-                              category: expenseGroup,
-                            }))
-                          }
-                          style={[
-                            S.expenseOption,
-                            f.name === t && S.expenseOptionOn,
-                          ]}
-                        >
-                          <Text
+                    {expenseGroup === "Abonnement" ? (
+                      !subscriptionGroup ? (
+                        <View style={S.categoryGrid}>
+                          {subscriptionTypes.map(([group]) => (
+                            <Pressable
+                              key={group}
+                              onPress={() => {
+                                setSubscriptionGroup(group);
+                                setF((current) => ({
+                                  ...current,
+                                  name: "",
+                                  category: "Abonnement",
+                                }));
+                              }}
+                              style={S.categoryChoice}
+                            >
+                              <View style={S.categoryIcon}>
+                                <Ionicons
+                                  name={
+                                    group === "TV / streaming"
+                                      ? "play-circle-outline"
+                                      : group === "Musikk"
+                                        ? "headset-outline"
+                                        : group === "Mobil"
+                                          ? "phone-portrait-outline"
+                                          : group === "Internett"
+                                            ? "wifi-outline"
+                                            : group === "Programvare"
+                                              ? "apps-outline"
+                                              : group === "Gaming"
+                                                ? "game-controller-outline"
+                                                : group === "Avis / nyheter"
+                                                  ? "newspaper-outline"
+                                                  : group === "Skylagring"
+                                                    ? "cloud-outline"
+                                                    : group === "Trening"
+                                                      ? "fitness-outline"
+                                                      : "ellipsis-horizontal-outline"
+                                  }
+                                  size={18}
+                                  color={C.green}
+                                />
+                              </View>
+                              <Text style={S.categoryChoiceText}>{group}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      ) : (
+                        <>
+                          <Pressable
+                            onPress={() => {
+                              setSubscriptionGroup(null);
+                              set("name", "");
+                            }}
+                            style={S.categoryBack}
+                          >
+                            <Ionicons name="chevron-back" size={18} color={C.green} />
+                            <Text style={S.categoryBackText}>Alle abonnementskategorier</Text>
+                          </Pressable>
+                          <Text style={S.expenseSelectedTitle}>{subscriptionGroup}</Text>
+                          <View style={S.expenseOptionList}>
+                            {(
+                              subscriptionTypes.find(
+                                ([g]) => g === subscriptionGroup,
+                              )?.[1] || []
+                            ).map((t) => (
+                              <Pressable
+                                key={t}
+                                onPress={() =>
+                                  setF((current) => ({
+                                    ...current,
+                                    name: /^Annen|^Annet/i.test(t) ? "" : t,
+                                    category: "Abonnement",
+                                  }))
+                                }
+                                style={[
+                                  S.expenseOption,
+                                  f.name === t && S.expenseOptionOn,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    S.expenseOptionText,
+                                    f.name === t && S.expenseOptionTextOn,
+                                  ]}
+                                >
+                                  {t}
+                                </Text>
+                                {f.name === t ? (
+                                  <Ionicons name="checkmark" size={20} color={C.white} />
+                                ) : null}
+                              </Pressable>
+                            ))}
+                          </View>
+                        </>
+                      )
+                    ) : (
+                      <View style={S.expenseOptionList}>
+                        {(
+                          expenseTypes.find(([g]) => g === expenseGroup)?.[1] ||
+                          []
+                        ).map((t) => (
+                          <Pressable
+                            key={t}
+                            onPress={() =>
+                              setF((x) => ({
+                                ...x,
+                                name: /^Annen|^Annet/i.test(t) ? "" : t,
+                                category: expenseGroup,
+                              }))
+                            }
                             style={[
-                              S.expenseOptionText,
-                              f.name === t && S.expenseOptionTextOn,
+                              S.expenseOption,
+                              f.name === t && S.expenseOptionOn,
                             ]}
                           >
-                            {t}
-                          </Text>
-                          {f.name === t ? (
-                            <Ionicons
-                              name="checkmark"
-                              size={20}
-                              color={C.white}
-                            />
-                          ) : null}
-                        </Pressable>
-                      ))}
-                    </View>
+                            <Text
+                              style={[
+                                S.expenseOptionText,
+                                f.name === t && S.expenseOptionTextOn,
+                              ]}
+                            >
+                              {t}
+                            </Text>
+                            {f.name === t ? (
+                              <Ionicons name="checkmark" size={20} color={C.white} />
+                            ) : null}
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
                   </>
                 )}
                 {expenseGroup === "Forsikringer" ? (
@@ -2933,9 +3037,11 @@ function Form({
                   value={f.name || ""}
                   onChangeText={(v) => set("name", v)}
                   placeholder={
-                    expenseGroup && f.name === ""
-                      ? "Skriv egen utgiftstype"
-                      : "Eget navn (valgfritt)"
+                    expenseGroup === "Abonnement"
+                      ? "Skriv navn på abonnement"
+                      : expenseGroup && f.name === ""
+                        ? "Skriv egen utgiftstype"
+                        : "Eget navn (valgfritt)"
                   }
                   style={S.input}
                 />
@@ -3396,6 +3502,15 @@ function Form({
                   }
                   keyboardType="decimal-pad"
                   style={S.input}
+                />
+                <Text style={S.formLabel}>Notat (valgfritt)</Text>
+                <TextInput
+                  value={f.note || ""}
+                  onChangeText={(v) => set("note", v)}
+                  placeholder="F.eks. familieabonnement, jobb, student eller annet"
+                  style={[S.input, S.textArea]}
+                  multiline
+                  textAlignVertical="top"
                 />
                 <Text style={S.formLabel}>Neste betaling / fornyelse</Text>
                 <Pressable
