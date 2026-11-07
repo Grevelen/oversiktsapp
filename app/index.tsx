@@ -29,6 +29,13 @@ import Slider from "@react-native-community/slider";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
+import type { Session } from "@supabase/supabase-js";
+import {
+  getSession,
+  onAuthStateChange,
+  signInWithApple,
+  signOut,
+} from "../src/overs/authService";
 
 import {
   type AppData,
@@ -131,6 +138,26 @@ export default function App() {
   );
   const [aboutOpen, setAboutOpen] = useState(false);
   const [annualView, setAnnualView] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    getSession()
+      .then((value) => {
+        if (mounted) setSession(value);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setAuthReady(true);
+      });
+    const { data: listener } = onAuthStateChange((value) => {
+      if (mounted) setSession(value);
+    });
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
   useEffect(() => {
     (async () => {
       try {
@@ -507,6 +534,8 @@ export default function App() {
           visible={aboutOpen}
           close={() => setAboutOpen(false)}
           onReset={resetAppData}
+          session={session}
+          authReady={authReady}
         />
         <Form
           kind={form}
@@ -637,11 +666,43 @@ function AboutOvers({
   visible,
   close,
   onReset,
+  session,
+  authReady,
 }: {
   visible: boolean;
   close: () => void;
   onReset: () => void;
+  session: Session | null;
+  authReady: boolean;
 }) {
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const startAppleLogin = async () => {
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      await signInWithApple();
+    } catch (error) {
+      setAuthError(
+        error instanceof Error ? error.message : "Innloggingen kunne ikke fullføres.",
+      );
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+  const logOut = async () => {
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      await signOut();
+    } catch (error) {
+      setAuthError(
+        error instanceof Error ? error.message : "Utloggingen kunne ikke fullføres.",
+      );
+    } finally {
+      setAuthBusy(false);
+    }
+  };
   return (
     <Modal
       visible={visible}
@@ -667,6 +728,67 @@ function AboutOvers({
             </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={S.aboutSection}>
+              <Text style={S.aboutTitle}>Konto</Text>
+              {!authReady ? (
+                <Text style={S.aboutText}>Kontrollerer innlogging …</Text>
+              ) : session ? (
+                <>
+                  <Text style={S.aboutText}>
+                    Innlogget som {session.user.email || "Apple-bruker"}.
+                  </Text>
+                  <Text style={[S.aboutText, { marginTop: 8 }]}>
+                    Økonomien ligger fortsatt lokalt på denne enheten. Ingenting
+                    flyttes til husholdningen før du aktivt velger det i et senere steg.
+                  </Text>
+                  <Pressable
+                    onPress={logOut}
+                    disabled={authBusy}
+                    accessibilityRole="button"
+                    style={[S.reviewedButton, { alignSelf: "flex-start", marginTop: 12 }]}
+                  >
+                    <Ionicons name="log-out-outline" size={18} color={C.green} />
+                    <Text style={S.reviewedButtonText}>
+                      {authBusy ? "Logger ut …" : "Logg ut"}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Text style={S.aboutText}>
+                    Logg inn for å klargjøre sikker synkronisering og deling med
+                    husholdningen. Registrerte økonomidata blir ikke flyttet automatisk.
+                  </Text>
+                  <Pressable
+                    onPress={startAppleLogin}
+                    disabled={authBusy}
+                    accessibilityRole="button"
+                    accessibilityLabel="Fortsett med Apple"
+                    style={{
+                      minHeight: 48,
+                      borderRadius: 14,
+                      backgroundColor: "#000000",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "row",
+                      gap: 9,
+                      marginTop: 12,
+                      paddingHorizontal: 18,
+                    }}
+                  >
+                    <Ionicons name="logo-apple" size={21} color="#FFFFFF" />
+                    <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "800" }}>
+                      {authBusy ? "Åpner Apple …" : "Fortsett med Apple"}
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+              {authError ? (
+                <Text style={{ color: C.red, fontSize: 12, marginTop: 10 }}>
+                  {authError}
+                </Text>
+              ) : null}
+            </View>
             <View style={S.aboutSection}>
               <Text style={S.aboutTitle}>Økonomisk oversikt</Text>
               <Text style={S.aboutText}>
