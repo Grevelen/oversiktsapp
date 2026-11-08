@@ -40,6 +40,8 @@ import {
 import {
   createHousehold,
   getMyHouseholds,
+  loadHouseholdData,
+  saveHouseholdData,
 } from "../src/overs/householdService";
 
 import {
@@ -110,6 +112,7 @@ function TextSuggestions({
   const matches = groups
     .flatMap(([group, labels]) => labels.map((label) => ({ group, label })))
     .filter(({ group, label }) =>
+      normalizeSearchText(label) !== normalizedQuery &&
       `${normalizeSearchText(group)} ${normalizeSearchText(label)}`.includes(
         normalizedQuery,
       ),
@@ -689,6 +692,7 @@ function AboutOvers({
   const [householdName, setHouseholdName] = useState("");
   const [households, setHouseholds] = useState<any[]>([]);
   const [householdError, setHouseholdError] = useState("");
+  const [syncMessage, setSyncMessage] = useState("");
   const appVersion = Constants.expoConfig?.version || "Ukjent";
 
   const refreshHouseholds = async () => {
@@ -720,6 +724,23 @@ function AboutOvers({
     }
   }, [visible, session?.user.id]);
 
+  const syncGroupData = async (householdId: string) => {
+    setHouseholdBusy(true);
+    setHouseholdError("");
+    setSyncMessage("");
+    try {
+      const current = await loadHouseholdData(householdId);
+      await saveHouseholdData(householdId, localData, current.revision);
+      setSyncMessage("Dataene er synkronisert med gruppen.");
+    } catch (error) {
+      setHouseholdError(
+        error instanceof Error ? error.message : "Dataene kunne ikke synkroniseres.",
+      );
+    } finally {
+      setHouseholdBusy(false);
+    }
+  };
+
   const createNewHousehold = () => {
     const name = householdName.trim();
     if (!name) {
@@ -728,7 +749,7 @@ function AboutOvers({
     }
     Alert.alert(
       "Opprett gruppe",
-      "Vil du lagre økonomidataene som ligger lokalt på denne enheten i den nye gruppen nå?",
+      "Vil du synkronisere dataene som ligger lokalt i denne appen med den nye gruppen nå?",
       [
         {
           text: "Ikke nå",
@@ -750,7 +771,7 @@ function AboutOvers({
           },
         },
         {
-          text: "Lagre i gruppen",
+          text: "Synkroniser",
           onPress: async () => {
             setHouseholdBusy(true);
             setHouseholdError("");
@@ -863,8 +884,39 @@ function AboutOvers({
                         );
                       })}
                       <Text style={S.aboutText}>
-                        Synkronisering for gruppen blir aktivert i neste steg etter sikkerhetstest.
+                        Endringer vil senere synkroniseres automatisk. Du kan også
+                        synkronisere dataene som ligger lokalt i appen nå.
                       </Text>
+                      <Pressable
+                        onPress={() => {
+                          const membership = households[0];
+                          const group = Array.isArray(membership?.households)
+                            ? membership.households[0]
+                            : membership?.households;
+                          if (!group?.id) return;
+                          Alert.alert(
+                            "Synkroniser data",
+                            "Vil du synkronisere dataene som ligger lokalt i denne appen med gruppen nå?",
+                            [
+                              { text: "Avbryt", style: "cancel" },
+                              { text: "Synkroniser", onPress: () => syncGroupData(group.id) },
+                            ],
+                          );
+                        }}
+                        disabled={householdBusy}
+                        accessibilityRole="button"
+                        style={[S.reviewedButton, { alignSelf: "flex-start", marginTop: 8 }]}
+                      >
+                        <Ionicons name="sync-outline" size={18} color={C.green} />
+                        <Text style={S.reviewedButtonText}>
+                          {householdBusy ? "Synkroniserer …" : "Synkroniser data"}
+                        </Text>
+                      </Pressable>
+                      {syncMessage ? (
+                        <Text style={[S.aboutText, { marginTop: 8, color: C.green }]}>
+                          {syncMessage}
+                        </Text>
+                      ) : null}
                     </View>
                   ) : (
                     <View style={{ marginTop: 14 }}>
@@ -875,7 +927,7 @@ function AboutOvers({
                       <TextInput
                         value={householdName}
                         onChangeText={setHouseholdName}
-                        placeholder="F.eks. Familien Kjærvik"
+                        placeholder="F.eks. Familien Olsen"
                         style={[S.input, { marginTop: 10 }]}
                         autoCapitalize="words"
                       />
@@ -983,9 +1035,6 @@ function AboutOvers({
               <View style={S.flex}>
                 <Text style={S.aboutPrivacyNoteText}>
                   Les personvernerklæringen
-                </Text>
-                <Text style={S.aboutPrivacyLinkText}>
-                  grevelen.github.io/oversiktsapp
                 </Text>
               </View>
               <Ionicons name="open-outline" size={17} color={C.green} />
@@ -2524,6 +2573,7 @@ function Form({
   const [insuredValueUnit, setInsuredValueUnit] =
     useState<InsuredValueUnit>("kr");
   const [atBottom, setAtBottom] = useState(false);
+  const [customInsuranceSelected, setCustomInsuranceSelected] = useState(false);
   const incomeTypes: [string, string[]][] = [
     ["Arbeid", ["Lønn", "Overtid / tillegg", "Bonus", "Næringsinntekt"]],
     [
@@ -2935,7 +2985,7 @@ function Form({
                 nativeEvent;
               setAtBottom(
                 layoutMeasurement.height + contentOffset.y >=
-                  contentSize.height - 40,
+                  contentSize.height - 160,
               );
             }}
             scrollEventThrottle={16}
@@ -3385,16 +3435,24 @@ function Form({
                   {insuranceTypes.map((t) => (
                     <Pressable
                       key={t}
-                      onPress={() => set("name", /^Annen/i.test(t) ? "" : t)}
+                      onPress={() => {
+                        const custom = /^Annen/i.test(t);
+                        setCustomInsuranceSelected(custom);
+                        set("name", custom ? "" : t);
+                      }}
                       style={[
                         S.suggestionChip,
-                        f.name === t && S.suggestionChipOn,
+                        ((/^Annen/i.test(t) && customInsuranceSelected) ||
+                          (!/^Annen/i.test(t) && f.name === t)) &&
+                          S.suggestionChipOn,
                       ]}
                     >
                       <Text
                         style={[
                           S.suggestionText,
-                          f.name === t && S.suggestionTextOn,
+                          ((/^Annen/i.test(t) && customInsuranceSelected) ||
+                            (!/^Annen/i.test(t) && f.name === t)) &&
+                            S.suggestionTextOn,
                         ]}
                       >
                         {t}
@@ -3404,14 +3462,20 @@ function Form({
                 </View>
                 <TextInput
                   value={f.name || ""}
-                  onChangeText={(v) => set("name", v)}
+                  onChangeText={(v) => {
+                    setCustomInsuranceSelected(true);
+                    set("name", v);
+                  }}
                   placeholder="Skriv type forsikring"
                   style={S.input}
                 />
                 <TextSuggestions
                   query={f.name || ""}
                   groups={[["Forsikringer", insuranceTypes]]}
-                  onSelect={({ label }) => set("name", label)}
+                  onSelect={({ label }) => {
+                    setCustomInsuranceSelected(false);
+                    set("name", label);
+                  }}
                 />
                 <Text style={S.formLabel}>Forsikringsselskap</Text>
                 <View style={S.suggestionWrap}>
