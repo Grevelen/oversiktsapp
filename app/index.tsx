@@ -38,15 +38,17 @@ import {
   signOut,
 } from "../src/overs/authService";
 import {
+  acceptGroupInviteCode,
+  bootstrapPersonalCloud,
+  createGroupInviteCode,
   createHousehold,
-  getMyHouseholds,
-  loadHouseholdData,
-  saveHouseholdData,
-  createInvitation,
   deleteGroup,
   getGroupMembers,
-  removeGroupMember,
+  getMyHouseholds,
+  loadHouseholdData,
   renameGroup,
+  removeGroupMember,
+  saveHouseholdData,
 } from "../src/overs/householdService";
 
 import {
@@ -699,6 +701,10 @@ function AboutOvers({
   const [householdError, setHouseholdError] = useState("");
   const [syncMessage, setSyncMessage] = useState("");
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  const [personalCloudEnabled, setPersonalCloudEnabled] = useState(false);
+  const [personalCloudMessage, setPersonalCloudMessage] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [joinCode, setJoinCode] = useState("");
   const appVersion = Constants.expoConfig?.version || "Ukjent";
   const appleDisplayName = (() => {
     const metadata = session?.user.user_metadata || {};
@@ -715,6 +721,65 @@ function AboutOvers({
       appleDisplayName,
       `Innloggingsmetode: ${provider}\nE-post: ${session.user.email || "Ikke tilgjengelig"}`,
       [{ text: "Lukk" }],
+    );
+  };
+
+  const enablePersonalCloud = async () => {
+    setHouseholdBusy(true);
+    setHouseholdError("");
+    setPersonalCloudMessage("");
+    try {
+      await bootstrapPersonalCloud(localData);
+      setPersonalCloudEnabled(true);
+      setPersonalCloudMessage("Dataene dine er lagret i Overs-kontoen.");
+    } catch (error) {
+      setHouseholdError(error instanceof Error ? error.message : "Kunne ikke aktivere skylagring.");
+    } finally {
+      setHouseholdBusy(false);
+    }
+  };
+
+  const generateGroupCode = async (householdId: string) => {
+    setHouseholdBusy(true);
+    setHouseholdError("");
+    try {
+      setInviteCode(await createGroupInviteCode(householdId));
+    } catch (error) {
+      setHouseholdError(error instanceof Error ? error.message : "Kunne ikke lage gruppekode.");
+    } finally {
+      setHouseholdBusy(false);
+    }
+  };
+
+  const joinGroupWithCode = () => {
+    const code = joinCode.replace(/\D/g, "");
+    if (code.length !== 8) {
+      setHouseholdError("Gruppekoden må bestå av 8 sifre.");
+      return;
+    }
+    Alert.alert(
+      "Bli med i gruppe?",
+      "Hvis koden er gyldig får du tilgang til gruppens delte økonomidata og kan redigere dem.",
+      [
+        { text: "Avbryt", style: "cancel" },
+        {
+          text: "Bli med",
+          onPress: async () => {
+            setHouseholdBusy(true);
+            setHouseholdError("");
+            try {
+              await acceptGroupInviteCode(code);
+              setJoinCode("");
+              await refreshHouseholds();
+              Alert.alert("Du er med", "Du har nå tilgang til gruppen.");
+            } catch (error) {
+              setHouseholdError(error instanceof Error ? error.message : "Gruppekoden er ugyldig eller utløpt.");
+            } finally {
+              setHouseholdBusy(false);
+            }
+          },
+        },
+      ],
     );
   };
 
@@ -767,20 +832,6 @@ function AboutOvers({
         setHouseholdError(error instanceof Error ? error.message : "Gruppenavnet kunne ikke endres.");
       } finally { setHouseholdBusy(false); }
     }, "plain-text", currentName);
-  };
-
-  const inviteMember = (householdId: string) => {
-    Alert.prompt("Inviter gruppemedlem", "Skriv e-postadressen til personen du vil invitere.", async (value) => {
-      const email = value?.trim().toLowerCase();
-      if (!email) return;
-      setHouseholdBusy(true);
-      try {
-        await createInvitation(householdId, email);
-        Alert.alert("Invitasjon opprettet", "Invitasjonen er registrert. Deling av invitasjonslenke kobles på i neste steg.");
-      } catch (error) {
-        setHouseholdError(error instanceof Error ? error.message : "Invitasjonen kunne ikke opprettes.");
-      } finally { setHouseholdBusy(false); }
-    }, "email-address");
   };
 
   const confirmDeleteGroup = (householdId: string, name: string) => {
@@ -941,6 +992,23 @@ function AboutOvers({
                     Dataene dine lagres kun på denne enheten frem til du velger å
                     synkronisere dem med en gruppe.
                   </Text>
+                  <View style={S.cloudCard}>
+                    <View style={S.cloudCardCopy}>
+                      <Text style={S.aboutTitle}>Min sky</Text>
+                      <Text style={S.aboutText}>
+                        Lagre dine private data i Overs-kontoen for å holde dem oppdatert på tvers av enhetene dine.
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={enablePersonalCloud}
+                      disabled={householdBusy || personalCloudEnabled}
+                      style={S.cloudActionButton}
+                    >
+                      <Ionicons name={personalCloudEnabled ? "cloud-done-outline" : "cloud-upload-outline"} size={17} color={C.green} />
+                      <Text style={S.reviewedButtonText}>{personalCloudEnabled ? "Aktivert" : "Aktiver"}</Text>
+                    </Pressable>
+                    {personalCloudMessage ? <Text style={S.cloudStatusText}>{personalCloudMessage}</Text> : null}
+                  </View>
                   {households.length ? (
                     <View style={{ marginTop: 14, gap: 6 }}>
                       <Text style={S.aboutTitle}>Gruppe</Text>
@@ -979,10 +1047,7 @@ function AboutOvers({
                                     <Text style={S.groupActionText}>Rediger</Text>
                                   </Pressable>
                                   <Pressable
-                                    onPress={() => {
-                                      refreshGroupMembers(household.id);
-                                      inviteMember(household.id);
-                                    }}
+                                    onPress={() => generateGroupCode(household.id)}
                                     style={S.groupActionButton}
                                   >
                                     <Ionicons name="person-add-outline" size={15} color={C.green} />
@@ -1003,6 +1068,13 @@ function AboutOvers({
                                     <Text style={[S.groupActionText, S.groupActionDeleteText]}>Slett</Text>
                                   </Pressable>
                                 </ScrollView>
+                                {inviteCode ? (
+                                  <View style={S.inviteCodeCard}>
+                                    <Text style={S.inviteCodeLabel}>GRUPPEKODE</Text>
+                                    <Text selectable style={S.inviteCodeValue}>{`${inviteCode.slice(0, 4)} ${inviteCode.slice(4)}`}</Text>
+                                    <Text style={S.aboutText}>Engangskoden utløper etter 24 timer.</Text>
+                                  </View>
+                                ) : null}
                                 {groupMembers.map((member: any) => (
                                   <View key={member.user_id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 5 }}>
                                     <View style={{ flex: 1 }}>
@@ -1084,6 +1156,22 @@ function AboutOvers({
                       </Pressable>
                     </View>
                   )}
+                  <View style={S.joinGroupCard}>
+                    <Text style={S.aboutTitle}>Bli med i en gruppe</Text>
+                    <Text style={S.aboutText}>Skriv inn den 8-sifrede koden du har fått av gruppeeieren.</Text>
+                    <View style={S.joinGroupRow}>
+                      <TextInput
+                        value={joinCode}
+                        onChangeText={(value) => setJoinCode(value.replace(/\D/g, "").slice(0, 8))}
+                        placeholder="1234 5678"
+                        keyboardType="number-pad"
+                        style={S.joinCodeInput}
+                      />
+                      <Pressable onPress={joinGroupWithCode} disabled={householdBusy} style={S.joinGroupButton}>
+                        <Text style={S.primaryText}>Bli med</Text>
+                      </Pressable>
+                    </View>
+                  </View>
                   {householdError ? (
                     <Text style={{ color: C.red, fontSize: 12, marginTop: 10 }}>
                       {householdError}
