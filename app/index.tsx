@@ -18,6 +18,7 @@ import {
   Platform,
   Linking,
   Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   Text,
@@ -162,6 +163,8 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [personalCloudEnabled, setPersonalCloudEnabled] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<"off" | "syncing" | "synced" | "error">("off");
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastCloudSyncAt, setLastCloudSyncAt] = useState<Date | null>(null);
   const cloudRevisionRef = useRef<number | null>(null);
   const applyingCloudRef = useRef(false);
   const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,6 +223,7 @@ export default function App() {
         setData(record.payload);
         setPersonalCloudEnabled(true);
         setCloudSyncStatus("synced");
+        setLastCloudSyncAt(new Date());
         setTimeout(() => { applyingCloudRef.current = false; }, 0);
         channel = subscribeToPersonalCloud((next) => {
           if (!active || next.revision <= (cloudRevisionRef.current ?? -1)) return;
@@ -227,6 +231,7 @@ export default function App() {
           cloudRevisionRef.current = next.revision;
           setData(next.payload);
           setCloudSyncStatus("synced");
+          setLastCloudSyncAt(new Date());
           setTimeout(() => { applyingCloudRef.current = false; }, 0);
         });
       })
@@ -271,7 +276,7 @@ export default function App() {
           setCloudSyncStatus("error");
         }
       }
-    }, 700);
+    }, 80);
     return () => {
       if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
     };
@@ -285,6 +290,7 @@ export default function App() {
     cloudRevisionRef.current = latest.revision;
     setData(latest.payload);
     setCloudSyncStatus("synced");
+    setLastCloudSyncAt(new Date());
     setTimeout(() => { applyingCloudRef.current = false; }, 0);
     const p: any = latest.payload;
     const itemCount =
@@ -296,6 +302,18 @@ export default function App() {
     return { itemCount, revision: latest.revision };
   };
 
+  const pullToRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      if (session && personalCloudEnabled) await refreshPersonalCloud();
+    } catch {
+      setCloudSyncStatus("error");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const activatePersonalCloud = async () => {
     if (!session) throw new Error("Du må være innlogget.");
     setCloudSyncStatus("syncing");
@@ -305,6 +323,7 @@ export default function App() {
     setData(record.payload);
     setPersonalCloudEnabled(true);
     setCloudSyncStatus("synced");
+    setLastCloudSyncAt(new Date());
     setTimeout(() => { applyingCloudRef.current = false; }, 0);
   };
 
@@ -369,15 +388,21 @@ export default function App() {
           }
         : insight,
     );
-    const priority = (insight: Insight) => {
-      if (data.incomes.length === 0 && insight.target === "Budsjett") {
-        const text = `${insight.title} ${insight.detail}`.toLocaleLowerCase("nb-NO");
-        if (text.includes("inntekt")) return 0;
+    const normalized = built.map((insight) => {
+      const text = `${insight.title} ${insight.detail}`.toLocaleLowerCase("nb-NO");
+      if (text.includes("overskudd i budsjettet")) {
+        return { ...insight, target: "Oversikt" as Tab };
       }
-      if (data.goals.length === 0 && insight.id === "buffer-missing") return 40;
-      return 10;
+      return insight;
+    });
+    const priority = (insight: Insight) => {
+      const text = `${insight.title} ${insight.detail}`.toLocaleLowerCase("nb-NO");
+      if (data.incomes.length === 0 && text.includes("inntekt")) return 0;
+      if (data.goals.length === 0 && insight.id === "buffer-missing") return 80;
+      if (text.includes("overskudd i budsjettet")) return 100;
+      return 20;
     };
-    return [...built].sort((a, b) => priority(a) - priority(b));
+    return [...normalized].sort((a, b) => priority(a) - priority(b));
   }, [data, budget]);
   const insights = useMemo(
     () =>
@@ -606,6 +631,15 @@ export default function App() {
         <ScrollView
           contentContainerStyle={S.scroll}
           showsVerticalScrollIndicator={false}
+          alwaysBounceVertical
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={pullToRefresh}
+              tintColor={C.green}
+              colors={[C.green]}
+            />
+          }
         >
           {screen === "Oversikt" && (
             <Overview
@@ -620,6 +654,13 @@ export default function App() {
               onReset={resetInsights}
               openBudget={() => go("Budsjett")}
               go={go}
+              cloudSyncStatus={cloudSyncStatus}
+              personalCloudEnabled={personalCloudEnabled}
+              lastCloudSyncAt={lastCloudSyncAt}
+              onCloudPress={() => {
+                if (!session || !personalCloudEnabled) return setAboutOpen(true);
+                pullToRefresh();
+              }}
             />
           )}
           {screen === "Budsjett" && (
@@ -1552,6 +1593,10 @@ function Overview({
   onReset,
   openBudget,
   go,
+  cloudSyncStatus,
+  personalCloudEnabled,
+  lastCloudSyncAt,
+  onCloudPress,
 }: {
   annual: boolean;
   togglePeriod: () => void;
@@ -1564,8 +1609,13 @@ function Overview({
   onReset: () => void;
   openBudget: () => void;
   go: (t: Tab) => void;
+  cloudSyncStatus: "off" | "syncing" | "synced" | "error";
+  personalCloudEnabled: boolean;
+  lastCloudSyncAt: Date | null;
+  onCloudPress: () => void;
 }) {
   const [all, setAll] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
   const [showIntroCelebration, setShowIntroCelebration] = useState(false);
   const first = insights.length ? insights[0] : null;
   const shown = all ? insights.slice(1) : [];
@@ -1687,7 +1737,25 @@ function Overview({
         openBudget={openBudget}
         annual={annual}
         togglePeriod={togglePeriod}
+        cloudSyncStatus={cloudSyncStatus}
+        personalCloudEnabled={personalCloudEnabled}
+        lastCloudSyncAt={lastCloudSyncAt}
+        onCloudPress={onCloudPress}
       />
+      <Pressable
+        onPress={() => setInsightsOpen((value) => !value)}
+        style={S.insightsToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: insightsOpen }}
+      >
+        <View style={S.insightsToggleLeft}>
+          <Ionicons name="bulb-outline" size={18} color={C.green} />
+          <Text style={S.insightsToggleText}>Økonomisk innsikt</Text>
+        </View>
+        <Ionicons name={insightsOpen ? "chevron-up" : "chevron-down"} size={18} color={C.green} />
+      </Pressable>
+      {insightsOpen ? (
+        <>
       {first ? (
         <>
           <View key={first.id} style={S.pitch}>
@@ -1860,6 +1928,8 @@ function Overview({
           <Text style={S.revisitText}>Vis innsiktene på nytt</Text>
         </Pressable>
       ) : null}
+        </>
+      ) : null}
       <Section title="Økonomien din" />
       <View style={S.monthGrid}>
         <MonthMetric
@@ -1898,11 +1968,19 @@ function OverviewHero({
   openBudget,
   annual,
   togglePeriod,
+  cloudSyncStatus,
+  personalCloudEnabled,
+  lastCloudSyncAt,
+  onCloudPress,
 }: {
   budget: { income: number; expense: number; saving: number; left: number };
   openBudget: () => void;
   annual: boolean;
   togglePeriod: () => void;
+  cloudSyncStatus: "off" | "syncing" | "synced" | "error";
+  personalCloudEnabled: boolean;
+  lastCloudSyncAt: Date | null;
+  onCloudPress: () => void;
 }) {
   const mult = annual ? 12 : 1;
   return (
@@ -1910,11 +1988,29 @@ function OverviewHero({
       onPress={openBudget}
       style={[S.hero, budget.left < 0 && S.heroNegative]}
     >
-      <View style={S.inlinePeriodRow}>
-        <Text style={S.heroLabel}>
-          {budget.left < 0 ? "Minus" : "Penger til overs"}
-        </Text>
-        <PeriodControl annual={annual} toggle={togglePeriod} />
+      <View style={S.heroTopLine}>
+        <View style={S.inlinePeriodRow}>
+          <Text style={S.heroLabel}>
+            {budget.left < 0 ? "Minus" : "Penger til overs"}
+          </Text>
+          <PeriodControl annual={annual} toggle={togglePeriod} />
+        </View>
+        <Pressable
+          onPress={(event) => {
+            event.stopPropagation();
+            onCloudPress();
+          }}
+          style={S.cloudHeroStatus}
+        >
+          <Ionicons
+            name={!personalCloudEnabled ? "cloud-outline" : cloudSyncStatus === "syncing" ? "cloud-upload-outline" : cloudSyncStatus === "error" ? "cloud-offline-outline" : "cloud-done-outline"}
+            size={19}
+            color={cloudSyncStatus === "error" ? "#FFD7D7" : "#D9E8E2"}
+          />
+          <Text style={S.cloudHeroStatusText}>
+            {!personalCloudEnabled ? "Lokal" : cloudSyncStatus === "syncing" ? "Laster opp" : cloudSyncStatus === "error" ? "Feil" : "Oppdatert"}
+          </Text>
+        </Pressable>
       </View>
       <Text style={S.heroAmount}>{kr(Math.round(budget.left * mult))}</Text>
       <View style={S.row}>
