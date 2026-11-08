@@ -700,6 +700,23 @@ function AboutOvers({
   const [syncMessage, setSyncMessage] = useState("");
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
   const appVersion = Constants.expoConfig?.version || "Ukjent";
+  const appleDisplayName = (() => {
+    const metadata = session?.user.user_metadata || {};
+    const combinedName = [metadata.given_name, metadata.family_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    return metadata.full_name || metadata.name || combinedName || "Apple-bruker";
+  })();
+  const showAccountDetails = () => {
+    if (!session) return;
+    const provider = session.user.app_metadata?.provider === "apple" ? "Apple" : "Konto";
+    Alert.alert(
+      appleDisplayName,
+      `Innloggingsmetode: ${provider}\nE-post: ${session.user.email || "Ikke tilgjengelig"}`,
+      [{ text: "Lukk" }],
+    );
+  };
 
   const refreshHouseholds = async () => {
     if (!session) {
@@ -908,12 +925,21 @@ function AboutOvers({
                 <Text style={S.aboutText}>Kontrollerer innlogging …</Text>
               ) : session ? (
                 <>
-                  <Text style={S.aboutText}>
-                    Innlogget som {session.user.email || "Apple-bruker"}.
-                  </Text>
+                  <Pressable
+                    onPress={showAccountDetails}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Logget inn som ${appleDisplayName}. Vis kontoinformasjon`}
+                    style={S.accountIdentity}
+                  >
+                    <View style={S.accountIdentityText}>
+                      <Text style={S.accountIdentityLabel}>Logget inn som</Text>
+                      <Text style={S.accountIdentityName}>{appleDisplayName}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={17} color={C.green} />
+                  </Pressable>
                   <Text style={[S.aboutText, { marginTop: 8 }]}>
-                    Økonomien ligger fortsatt lokalt på denne enheten frem til du
-                    aktivt velger å lagre økonomidataene i en gruppe.
+                    Dataene dine lagres kun på denne enheten frem til du velger å
+                    synkronisere dem med en gruppe.
                   </Text>
                   {households.length ? (
                     <View style={{ marginTop: 14, gap: 6 }}>
@@ -940,18 +966,43 @@ function AboutOvers({
                             </Text>
                             {membership.role === "owner" ? (
                               <View style={{ marginTop: 10, gap: 8 }}>
-                                <Pressable onPress={() => editGroupName(household.id, household.name)} style={S.reviewedButton}>
-                                  <Ionicons name="pencil-outline" size={17} color={C.green} />
-                                  <Text style={S.reviewedButtonText}>Endre navn</Text>
-                                </Pressable>
-                                <Pressable onPress={() => { refreshGroupMembers(household.id); inviteMember(household.id); }} style={S.reviewedButton}>
-                                  <Ionicons name="person-add-outline" size={17} color={C.green} />
-                                  <Text style={S.reviewedButtonText}>Inviter medlem</Text>
-                                </Pressable>
-                                <Pressable onPress={() => refreshGroupMembers(household.id)} style={S.reviewedButton}>
-                                  <Ionicons name="people-outline" size={17} color={C.green} />
-                                  <Text style={S.reviewedButtonText}>Vis medlemmer</Text>
-                                </Pressable>
+                                <ScrollView
+                                  horizontal
+                                  showsHorizontalScrollIndicator={false}
+                                  contentContainerStyle={S.groupActionRow}
+                                >
+                                  <Pressable
+                                    onPress={() => editGroupName(household.id, household.name)}
+                                    style={S.groupActionButton}
+                                  >
+                                    <Ionicons name="pencil-outline" size={15} color={C.green} />
+                                    <Text style={S.groupActionText}>Rediger</Text>
+                                  </Pressable>
+                                  <Pressable
+                                    onPress={() => {
+                                      refreshGroupMembers(household.id);
+                                      inviteMember(household.id);
+                                    }}
+                                    style={S.groupActionButton}
+                                  >
+                                    <Ionicons name="person-add-outline" size={15} color={C.green} />
+                                    <Text style={S.groupActionText}>Inviter</Text>
+                                  </Pressable>
+                                  <Pressable
+                                    onPress={() => refreshGroupMembers(household.id)}
+                                    style={S.groupActionButton}
+                                  >
+                                    <Ionicons name="people-outline" size={15} color={C.green} />
+                                    <Text style={S.groupActionText}>Medlemmer</Text>
+                                  </Pressable>
+                                  <Pressable
+                                    onPress={() => confirmDeleteGroup(household.id, household.name)}
+                                    style={[S.groupActionButton, S.groupActionDelete]}
+                                  >
+                                    <Ionicons name="trash-outline" size={15} color={C.red} />
+                                    <Text style={[S.groupActionText, S.groupActionDeleteText]}>Slett</Text>
+                                  </Pressable>
+                                </ScrollView>
                                 {groupMembers.map((member: any) => (
                                   <View key={member.user_id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 5 }}>
                                     <View style={{ flex: 1 }}>
@@ -968,10 +1019,6 @@ function AboutOvers({
                                     ) : null}
                                   </View>
                                 ))}
-                                <Pressable onPress={() => confirmDeleteGroup(household.id, household.name)} style={[S.reviewedButton, { borderColor: C.redPale }]}>
-                                  <Ionicons name="trash-outline" size={17} color={C.red} />
-                                  <Text style={[S.reviewedButtonText, { color: C.red }]}>Slett gruppe</Text>
-                                </Pressable>
                               </View>
                             ) : null}
                           </View>
