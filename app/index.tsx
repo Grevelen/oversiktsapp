@@ -640,6 +640,12 @@ export default function App() {
           title={screen}
           onReset={resetAppData}
           onOpenAbout={() => setAboutOpen(true)}
+          cloudSyncStatus={cloudSyncStatus}
+          personalCloudEnabled={personalCloudEnabled}
+          onCloudPress={() => {
+            if (!session || !personalCloudEnabled) return setAboutOpen(true);
+            pullToRefresh();
+          }}
         />
         <ScrollView
           contentContainerStyle={S.scroll}
@@ -667,13 +673,6 @@ export default function App() {
               onReset={resetInsights}
               openBudget={() => go("Budsjett")}
               go={go}
-              cloudSyncStatus={cloudSyncStatus}
-              personalCloudEnabled={personalCloudEnabled}
-              lastCloudSyncAt={lastCloudSyncAt}
-              onCloudPress={() => {
-                if (!session || !personalCloudEnabled) return setAboutOpen(true);
-                pullToRefresh();
-              }}
             />
           )}
           {screen === "Budsjett" && (
@@ -841,11 +840,35 @@ function Header({
   title,
   onReset,
   onOpenAbout,
+  cloudSyncStatus,
+  personalCloudEnabled,
+  onCloudPress,
 }: {
   title: string;
   onReset: () => void;
   onOpenAbout: () => void;
+  cloudSyncStatus: "off" | "loading" | "uploading" | "synced" | "error";
+  personalCloudEnabled: boolean;
+  onCloudPress: () => void;
 }) {
+  const cloudLabel = !personalCloudEnabled
+    ? "Kobler til"
+    : cloudSyncStatus === "loading"
+      ? "Henter"
+      : cloudSyncStatus === "uploading"
+        ? "Laster opp"
+        : cloudSyncStatus === "error"
+          ? "Feil"
+          : "Oppdatert";
+  const cloudIcon = !personalCloudEnabled
+    ? "cloud-outline"
+    : cloudSyncStatus === "loading"
+      ? "sync-outline"
+      : cloudSyncStatus === "uploading"
+        ? "cloud-upload-outline"
+        : cloudSyncStatus === "error"
+          ? "cloud-offline-outline"
+          : "cloud-done-outline";
   return (
     <View style={S.header}>
       <View style={S.brandTitle}>
@@ -855,17 +878,42 @@ function Header({
         />
         <Text style={S.title}>{title}</Text>
       </View>
-      <Pressable
-        onPress={onOpenAbout}
-        onLongPress={onReset}
-        delayLongPress={7000}
-        accessibilityRole="button"
-        accessibilityLabel="Person og innstillinger"
-        accessibilityHint="Åpner Om Overs. Hold inne i sju sekunder for nullstilling av appdata"
-        style={S.avatar}
-      >
-        <Ionicons name="people" size={20} color={C.green} />
-      </Pressable>
+      <View style={S.headerActions}>
+        <Pressable
+          onPress={onCloudPress}
+          accessibilityRole="button"
+          accessibilityLabel={`Sky: ${cloudLabel}`}
+          style={[
+            S.headerCloudStatus,
+            cloudSyncStatus === "error" && S.headerCloudStatusError,
+          ]}
+        >
+          <Ionicons
+            name={cloudIcon as Icon}
+            size={17}
+            color={cloudSyncStatus === "error" ? C.red : C.green}
+          />
+          <Text
+            style={[
+              S.headerCloudText,
+              cloudSyncStatus === "error" && S.headerCloudTextError,
+            ]}
+          >
+            {cloudLabel}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={onOpenAbout}
+          onLongPress={onReset}
+          delayLongPress={7000}
+          accessibilityRole="button"
+          accessibilityLabel="Person og innstillinger"
+          accessibilityHint="Åpner Om Overs. Hold inne i sju sekunder for nullstilling av appdata"
+          style={S.avatar}
+        >
+          <Ionicons name="people" size={20} color={C.green} />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -1607,10 +1655,6 @@ function Overview({
   onReset,
   openBudget,
   go,
-  cloudSyncStatus,
-  personalCloudEnabled,
-  lastCloudSyncAt,
-  onCloudPress,
 }: {
   annual: boolean;
   togglePeriod: () => void;
@@ -1623,14 +1667,11 @@ function Overview({
   onReset: () => void;
   openBudget: () => void;
   go: (t: Tab) => void;
-  cloudSyncStatus: "off" | "loading" | "uploading" | "synced" | "error";
-  personalCloudEnabled: boolean;
-  lastCloudSyncAt: Date | null;
-  onCloudPress: () => void;
 }) {
   const [all, setAll] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [showIntroCelebration, setShowIntroCelebration] = useState(false);
+  const [showSkipIntroConfirm, setShowSkipIntroConfirm] = useState(false);
   const first = insights.length ? insights[0] : null;
   const shown = all ? insights.slice(1) : [];
   const skipped = data.skippedSetup || [];
@@ -1678,15 +1719,10 @@ function Overview({
     setShowIntroCelebration(false);
     setData((d) => ({ ...d, onboardingComplete: true, dismissedInsights: [] }));
   };
-  const skipIntroduction = () => {
-    Alert.alert(
-      "Hoppe over introduksjonen?",
-      "Du kan når som helst legge til inntekter, utgifter, forsikringer, abonnement og sparemål senere.",
-      [
-        { text: "Avbryt", style: "cancel" },
-        { text: "Hopp over", onPress: showCelebration },
-      ],
-    );
+  const skipIntroduction = () => setShowSkipIntroConfirm(true);
+  const confirmSkipIntroduction = () => {
+    setShowSkipIntroConfirm(false);
+    showCelebration();
   };
   if (!data.onboardingComplete)
     return (
@@ -1738,6 +1774,41 @@ function Overview({
             <Text style={S.skipIntroductionText}>Hopp over introduksjon</Text>
           </Pressable>
         )}
+        <Modal
+          visible={showSkipIntroConfirm}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowSkipIntroConfirm(false)}
+        >
+          <View style={S.skipConfirmRoot}>
+            <Pressable
+              style={S.skipConfirmBackdrop}
+              onPress={() => setShowSkipIntroConfirm(false)}
+            />
+            <View style={S.skipConfirmCard}>
+              <View style={S.skipConfirmIcon}>
+                <Ionicons name="compass-outline" size={26} color={C.green} />
+              </View>
+              <Text style={S.skipConfirmTitle}>Hoppe over introduksjonen?</Text>
+              <Text style={S.skipConfirmText}>
+                Du kan når som helst legge til inntekter, utgifter, forsikringer,
+                abonnement og sparemål senere.
+              </Text>
+              <Pressable
+                onPress={() => setShowSkipIntroConfirm(false)}
+                style={[S.primary, S.skipConfirmPrimary]}
+              >
+                <Text style={S.primaryText}>Fortsett introduksjonen</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmSkipIntroduction}
+                style={S.skipConfirmSecondary}
+              >
+                <Text style={S.skipConfirmSecondaryText}>Hopp over introduksjonen</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
         <IntroCelebration
           visible={showIntroCelebration}
           onContinue={finishIntroduction}
@@ -1751,10 +1822,6 @@ function Overview({
         openBudget={openBudget}
         annual={annual}
         togglePeriod={togglePeriod}
-        cloudSyncStatus={cloudSyncStatus}
-        personalCloudEnabled={personalCloudEnabled}
-        lastCloudSyncAt={lastCloudSyncAt}
-        onCloudPress={onCloudPress}
       />
       <Pressable
         onPress={() => setInsightsOpen((value) => !value)}
@@ -1982,19 +2049,11 @@ function OverviewHero({
   openBudget,
   annual,
   togglePeriod,
-  cloudSyncStatus,
-  personalCloudEnabled,
-  lastCloudSyncAt,
-  onCloudPress,
 }: {
   budget: { income: number; expense: number; saving: number; left: number };
   openBudget: () => void;
   annual: boolean;
   togglePeriod: () => void;
-  cloudSyncStatus: "off" | "loading" | "uploading" | "synced" | "error";
-  personalCloudEnabled: boolean;
-  lastCloudSyncAt: Date | null;
-  onCloudPress: () => void;
 }) {
   const mult = annual ? 12 : 1;
   return (
@@ -2002,29 +2061,11 @@ function OverviewHero({
       onPress={openBudget}
       style={[S.hero, budget.left < 0 && S.heroNegative]}
     >
-      <View style={S.heroTopLine}>
-        <View style={S.inlinePeriodRow}>
-          <Text style={S.heroLabel}>
-            {budget.left < 0 ? "Minus" : "Penger til overs"}
-          </Text>
-          <PeriodControl annual={annual} toggle={togglePeriod} />
-        </View>
-        <Pressable
-          onPress={(event) => {
-            event.stopPropagation();
-            onCloudPress();
-          }}
-          style={S.cloudHeroStatus}
-        >
-          <Ionicons
-            name={!personalCloudEnabled ? "cloud-outline" : (cloudSyncStatus === "loading" || cloudSyncStatus === "uploading") ? "cloud-upload-outline" : cloudSyncStatus === "error" ? "cloud-offline-outline" : "cloud-done-outline"}
-            size={19}
-            color={cloudSyncStatus === "error" ? "#FFD7D7" : "#D9E8E2"}
-          />
-          <Text style={S.cloudHeroStatusText}>
-            {!personalCloudEnabled ? "Lokal" : (cloudSyncStatus === "loading" || cloudSyncStatus === "uploading") ? "Laster opp" : cloudSyncStatus === "error" ? "Feil" : "Oppdatert"}
-          </Text>
-        </Pressable>
+      <View style={S.inlinePeriodRow}>
+        <Text style={S.heroLabel}>
+          {budget.left < 0 ? "Minus" : "Penger til overs"}
+        </Text>
+        <PeriodControl annual={annual} toggle={togglePeriod} />
       </View>
       <Text style={S.heroAmount}>{kr(Math.round(budget.left * mult))}</Text>
       <View style={S.row}>
