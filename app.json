@@ -2,7 +2,7 @@
   "expo": {
     "name": "Overs",
     "slug": "overs",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "icon": "./assets/images/icon.png",
     "orientation": "portrait",
     "scheme": "overs",
