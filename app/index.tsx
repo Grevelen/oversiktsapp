@@ -357,10 +357,28 @@ export default function App() {
       left: income - expense - saving,
     };
   }, [data]);
-  const allInsights = useMemo(
-    () => (data.onboardingComplete ? buildInsights(data, budget) : []),
-    [data, budget],
-  );
+  const allInsights = useMemo(() => {
+    if (!data.onboardingComplete) return [];
+    const built = buildInsights(data, budget).map((insight) =>
+      insight.id === "buffer-missing"
+        ? {
+            ...insight,
+            title: "Opprett et sparemål",
+            detail:
+              "Et sparemål gjør det enklere å følge utviklingen mot noe du ønsker å sette penger til side for.",
+          }
+        : insight,
+    );
+    const priority = (insight: Insight) => {
+      if (data.incomes.length === 0 && insight.target === "Budsjett") {
+        const text = `${insight.title} ${insight.detail}`.toLocaleLowerCase("nb-NO");
+        if (text.includes("inntekt")) return 0;
+      }
+      if (data.goals.length === 0 && insight.id === "buffer-missing") return 40;
+      return 10;
+    };
+    return [...built].sort((a, b) => priority(a) - priority(b));
+  }, [data, budget]);
   const insights = useMemo(
     () =>
       allInsights.filter((r) => !(data.dismissedInsights || []).includes(r.id)),
