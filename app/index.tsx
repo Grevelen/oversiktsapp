@@ -29,6 +29,7 @@ import Slider from "@react-native-community/slider";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
+import Constants from "expo-constants";
 import type { Session } from "@supabase/supabase-js";
 import {
   getSession,
@@ -36,6 +37,10 @@ import {
   signInWithApple,
   signOut,
 } from "../src/overs/authService";
+import {
+  createHousehold,
+  getMyHouseholds,
+} from "../src/overs/householdService";
 
 import {
   type AppData,
@@ -536,6 +541,7 @@ export default function App() {
           onReset={resetAppData}
           session={session}
           authReady={authReady}
+          localData={data}
         />
         <Form
           kind={form}
@@ -668,15 +674,104 @@ function AboutOvers({
   onReset,
   session,
   authReady,
+  localData,
 }: {
   visible: boolean;
   close: () => void;
   onReset: () => void;
   session: Session | null;
   authReady: boolean;
+  localData: AppData;
 }) {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [householdBusy, setHouseholdBusy] = useState(false);
+  const [householdName, setHouseholdName] = useState("");
+  const [households, setHouseholds] = useState<any[]>([]);
+  const [householdError, setHouseholdError] = useState("");
+  const appVersion = Constants.expoConfig?.version || "Ukjent";
+
+  const refreshHouseholds = async () => {
+    if (!session) {
+      setHouseholds([]);
+      return;
+    }
+    setHouseholdBusy(true);
+    setHouseholdError("");
+    try {
+      const result = await getMyHouseholds();
+      setHouseholds(Array.isArray(result) ? result : []);
+    } catch (error) {
+      setHouseholdError(
+        error instanceof Error
+          ? error.message
+          : "Kunne ikke hente gruppen.",
+      );
+    } finally {
+      setHouseholdBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (visible && session) refreshHouseholds();
+    if (!session) {
+      setHouseholds([]);
+      setHouseholdName("");
+    }
+  }, [visible, session?.user.id]);
+
+  const createNewHousehold = () => {
+    const name = householdName.trim();
+    if (!name) {
+      setHouseholdError("Skriv inn et navn på gruppen.");
+      return;
+    }
+    Alert.alert(
+      "Opprett gruppe",
+      "Vil du lagre økonomidataene som ligger lokalt på denne enheten i den nye gruppen nå?",
+      [
+        {
+          text: "Ikke nå",
+          onPress: async () => {
+            setHouseholdBusy(true);
+            setHouseholdError("");
+            try {
+              await createHousehold(name, seed);
+              setHouseholdName("");
+              await refreshHouseholds();
+            } catch (error) {
+              setHouseholdError(
+                error instanceof Error
+                  ? error.message
+                  : "Gruppen kunne ikke opprettes.",
+              );
+              setHouseholdBusy(false);
+            }
+          },
+        },
+        {
+          text: "Lagre i gruppen",
+          onPress: async () => {
+            setHouseholdBusy(true);
+            setHouseholdError("");
+            try {
+              await createHousehold(name, localData);
+              setHouseholdName("");
+              await refreshHouseholds();
+            } catch (error) {
+              setHouseholdError(
+                error instanceof Error
+                  ? error.message
+                  : "Gruppen kunne ikke opprettes.",
+              );
+              setHouseholdBusy(false);
+            }
+          },
+        },
+        { text: "Avbryt", style: "cancel" },
+      ],
+    );
+  };
   const startAppleLogin = async () => {
     setAuthBusy(true);
     setAuthError("");
@@ -738,9 +833,69 @@ function AboutOvers({
                     Innlogget som {session.user.email || "Apple-bruker"}.
                   </Text>
                   <Text style={[S.aboutText, { marginTop: 8 }]}>
-                    Økonomien ligger fortsatt lokalt på denne enheten. Ingenting
-                    flyttes til husholdningen før du aktivt velger det i et senere steg.
+                    Økonomien ligger fortsatt lokalt på denne enheten frem til du
+                    aktivt velger å lagre økonomidataene i en gruppe.
                   </Text>
+                  {households.length ? (
+                    <View style={{ marginTop: 14, gap: 6 }}>
+                      <Text style={S.aboutTitle}>Gruppe</Text>
+                      {households.map((membership: any, index: number) => {
+                        const household = Array.isArray(membership.households)
+                          ? membership.households[0]
+                          : membership.households;
+                        return (
+                          <View
+                            key={household?.id || index}
+                            style={{
+                              borderWidth: 1,
+                              borderColor: C.line,
+                              borderRadius: 12,
+                              padding: 12,
+                            }}
+                          >
+                            <Text style={S.cardTitle}>
+                              {household?.name || "Gruppe"}
+                            </Text>
+                            <Text style={S.cardSub}>
+                              {membership.role === "owner" ? "Eier" : "Medlem"}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                      <Text style={S.aboutText}>
+                        Synkronisering for gruppen blir aktivert i neste steg etter sikkerhetstest.
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={{ marginTop: 14 }}>
+                      <Text style={S.aboutTitle}>Opprett gruppe</Text>
+                      <Text style={S.aboutText}>
+                        Gruppen blir grunnlaget for sikker deling med personer du inviterer.
+                      </Text>
+                      <TextInput
+                        value={householdName}
+                        onChangeText={setHouseholdName}
+                        placeholder="F.eks. Familien Kjærvik"
+                        style={[S.input, { marginTop: 10 }]}
+                        autoCapitalize="words"
+                      />
+                      <Pressable
+                        onPress={createNewHousehold}
+                        disabled={householdBusy}
+                        accessibilityRole="button"
+                        style={[S.primary, { marginTop: 4 }]}
+                      >
+                        <Text style={S.primaryText}>
+                          {householdBusy ? "Oppretter …" : "Opprett gruppe"}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  {householdError ? (
+                    <Text style={{ color: C.red, fontSize: 12, marginTop: 10 }}>
+                      {householdError}
+                    </Text>
+                  ) : null}
                   <Pressable
                     onPress={logOut}
                     disabled={authBusy}
@@ -756,8 +911,8 @@ function AboutOvers({
               ) : (
                 <>
                   <Text style={S.aboutText}>
-                    Logg inn for å klargjøre sikker synkronisering og deling med
-                    husholdningen. Registrerte økonomidata blir ikke flyttet automatisk.
+                    Logg inn for å klargjøre sikker synkronisering og deling i en
+                    gruppe. Registrerte økonomidata blir ikke lagret i gruppen automatisk.
                   </Text>
                   <Pressable
                     onPress={startAppleLogin}
@@ -808,7 +963,7 @@ function AboutOvers({
             </View>
             <View style={S.aboutSection}>
               <Text style={S.aboutTitle}>Appversjon</Text>
-              <Text style={S.aboutText}>Overs 0.1.0</Text>
+              <Text style={S.aboutText}>Overs {appVersion}</Text>
             </View>
             <Pressable
               onPress={() =>
