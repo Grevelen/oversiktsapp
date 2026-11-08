@@ -963,13 +963,6 @@ export const S = StyleSheet.create({
     paddingVertical: 7,
   },
   cloudStatusText: { color: C.green, fontSize: 11, fontWeight: "750" },
-  accountActionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 12,
-  },
-  accountDeleteButton: { borderColor: C.redPale, backgroundColor: C.redPale },
   inviteCodeCard: {
     borderRadius: 13,
     backgroundColor: C.pale,

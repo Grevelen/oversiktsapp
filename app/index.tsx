@@ -837,7 +837,18 @@ function AboutOvers({
     Alert.alert(
       appleDisplayName,
       `Innloggingsmetode: ${provider}\nE-post: ${session.user.email || "Ikke tilgjengelig"}`,
-      [{ text: "Lukk" }],
+      [
+        { text: "Lukk", style: "cancel" },
+        {
+          text: "Logg ut",
+          onPress: () => logOut(),
+        },
+        {
+          text: "Slett konto",
+          style: "destructive",
+          onPress: confirmAccountDeletion,
+        },
+      ],
     );
   };
 
@@ -1291,10 +1302,6 @@ function AboutOvers({
                           </View>
                         );
                       })}
-                      <Text style={S.aboutText}>
-                        Endringer vil senere synkroniseres automatisk. Du kan også
-                        synkronisere dataene som ligger lokalt i appen nå.
-                      </Text>
                       <Pressable
                         onPress={() => {
                           const membership = households[0];
@@ -1372,26 +1379,13 @@ function AboutOvers({
                       {householdError}
                     </Text>
                   ) : null}
-                  <View style={S.accountActionRow}>
-                    <Pressable onPress={exportMyData} style={S.reviewedButton}>
-                      <Ionicons name="download-outline" size={18} color={C.green} />
-                      <Text style={S.reviewedButtonText}>Eksporter mine data</Text>
-                    </Pressable>
-                    <Pressable onPress={confirmAccountDeletion} style={[S.reviewedButton, S.accountDeleteButton]}>
-                      <Ionicons name="trash-outline" size={18} color={C.red} />
-                      <Text style={[S.reviewedButtonText, { color: C.red }]}>Slett konto</Text>
-                    </Pressable>
-                  </View>
                   <Pressable
-                    onPress={logOut}
-                    disabled={authBusy}
+                    onPress={exportMyData}
                     accessibilityRole="button"
                     style={[S.reviewedButton, { alignSelf: "flex-start", marginTop: 12 }]}
                   >
-                    <Ionicons name="log-out-outline" size={18} color={C.green} />
-                    <Text style={S.reviewedButtonText}>
-                      {authBusy ? "Logger ut …" : "Logg ut"}
-                    </Text>
+                    <Ionicons name="download-outline" size={18} color={C.green} />
+                    <Text style={S.reviewedButtonText}>Eksporter mine data</Text>
                   </Pressable>
                 </>
               ) : (
@@ -1564,7 +1558,16 @@ function Overview({
     setShowIntroCelebration(false);
     setData((d) => ({ ...d, onboardingComplete: true, dismissedInsights: [] }));
   };
-  const skipIntroduction = showCelebration;
+  const skipIntroduction = () => {
+    Alert.alert(
+      "Hoppe over introduksjonen?",
+      "Du kan når som helst legge til inntekter, utgifter, forsikringer, abonnement og sparemål senere.",
+      [
+        { text: "Avbryt", style: "cancel" },
+        { text: "Hopp over", onPress: showCelebration },
+      ],
+    );
+  };
   if (!data.onboardingComplete)
     return (
       <>
