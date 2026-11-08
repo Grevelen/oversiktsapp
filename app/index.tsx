@@ -215,7 +215,11 @@ export default function App() {
     }
     let active = true;
     let channel: ReturnType<typeof subscribeToPersonalCloud> | null = null;
-    loadPersonalCloud()
+    setCloudSyncStatus("syncing");
+    // The bootstrap RPC is idempotent: it returns the existing cloud row for
+    // this account and only creates one when the account has none. This avoids
+    // device-local activation state and makes cloud status follow the account.
+    bootstrapPersonalCloud(data)
       .then((record) => {
         if (!active) return;
         applyingCloudRef.current = true;
@@ -235,14 +239,10 @@ export default function App() {
           setTimeout(() => { applyingCloudRef.current = false; }, 0);
         });
       })
-      .catch((error) => {
+      .catch(() => {
         if (!active) return;
-        if (error?.code === "PGRST116") {
-          setPersonalCloudEnabled(false);
-          setCloudSyncStatus("off");
-        } else {
-          setCloudSyncStatus("error");
-        }
+        setPersonalCloudEnabled(false);
+        setCloudSyncStatus("error");
       });
     return () => {
       active = false;
@@ -1239,17 +1239,9 @@ function AboutOvers({
                     <View style={S.cloudCardCopy}>
                       <Text style={S.aboutTitle}>Min sky</Text>
                       <Text style={S.aboutText}>
-                        Lagre dine private data i Overs-kontoen for å holde dem oppdatert på tvers av enhetene dine.
+                        Private data synkroniseres automatisk på enheter der du er logget inn med samme Overs-konto.
                       </Text>
                     </View>
-                    <Pressable
-                      onPress={enablePersonalCloud}
-                      disabled={householdBusy || personalCloudEnabled}
-                      style={S.cloudActionButton}
-                    >
-                      <Ionicons name={personalCloudEnabled ? "cloud-done-outline" : "cloud-upload-outline"} size={17} color={C.green} />
-                      <Text style={S.reviewedButtonText}>{personalCloudEnabled ? "Aktivert" : "Aktiver"}</Text>
-                    </Pressable>
                     {personalCloudEnabled ? (
                       <Pressable
                         onPress={async () => {
@@ -1278,7 +1270,16 @@ function AboutOvers({
                         <Ionicons name="sync-outline" size={17} color={C.green} />
                         <Text style={S.reviewedButtonText}>Synkroniser nå</Text>
                       </Pressable>
-                    ) : null}
+                    ) : (
+                      <Pressable
+                        onPress={enablePersonalCloud}
+                        disabled={householdBusy || cloudSyncStatus === "syncing"}
+                        style={S.cloudActionButton}
+                      >
+                        <Ionicons name="refresh-outline" size={17} color={C.green} />
+                        <Text style={S.reviewedButtonText}>Prøv igjen</Text>
+                      </Pressable>
+                    )}
                     <Text style={S.cloudStatusText}>
                       {cloudSyncStatus === "syncing"
                         ? "Synkroniserer …"
