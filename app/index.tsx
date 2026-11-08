@@ -278,7 +278,7 @@ export default function App() {
   }, [data, ready, session?.user.id, personalCloudEnabled]);
 
   const refreshPersonalCloud = async () => {
-    if (!session || !personalCloudEnabled) return;
+    if (!session || !personalCloudEnabled) return null;
     setCloudSyncStatus("syncing");
     const latest = await loadPersonalCloud();
     applyingCloudRef.current = true;
@@ -286,6 +286,14 @@ export default function App() {
     setData(latest.payload);
     setCloudSyncStatus("synced");
     setTimeout(() => { applyingCloudRef.current = false; }, 0);
+    const p: any = latest.payload;
+    const itemCount =
+      (p.incomes?.length || 0) +
+      (p.expenses?.length || 0) +
+      (p.insurances?.length || 0) +
+      (p.subscriptions?.length || 0) +
+      (p.goals?.length || 0);
+    return { itemCount, revision: latest.revision };
   };
 
   const activatePersonalCloud = async () => {
@@ -810,7 +818,7 @@ function AboutOvers({
   personalCloudEnabled: boolean;
   cloudSyncStatus: "off" | "syncing" | "synced" | "error";
   onEnablePersonalCloud: () => Promise<void>;
-  onRefreshPersonalCloud: () => Promise<void>;
+  onRefreshPersonalCloud: () => Promise<{ itemCount: number; revision: number } | null>;
 }) {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -1189,7 +1197,14 @@ function AboutOvers({
                           setHouseholdBusy(true);
                           setHouseholdError("");
                           try {
-                            await onRefreshPersonalCloud();
+                            const result = await onRefreshPersonalCloud();
+                            if (result) {
+                              Alert.alert(
+                                "Synkronisering fullført",
+                                `${result.itemCount} registreringer er oppdatert fra skyen.`,
+                                [{ text: "OK" }],
+                              );
+                            }
                           } catch (error) {
                             setHouseholdError(
                               error instanceof Error ? error.message : "Kunne ikke hente nyeste data.",
@@ -1217,7 +1232,6 @@ function AboutOvers({
                   </View>
                   {households.length ? (
                     <View style={{ marginTop: 14, gap: 6 }}>
-                      <Text style={S.aboutTitle}>Gruppe</Text>
                       {households.map((membership: any, index: number) => {
                         const household = Array.isArray(membership.households)
                           ? membership.households[0]
@@ -1232,6 +1246,7 @@ function AboutOvers({
                               padding: 12,
                             }}
                           >
+                            <Text style={S.groupCardKicker}>GRUPPE</Text>
                             <Text style={S.cardTitle}>
                               {household?.name || "Gruppe"}
                             </Text>
@@ -1299,39 +1314,26 @@ function AboutOvers({
                                 ))}
                               </View>
                             ) : null}
+                            <Pressable
+                              onPress={() =>
+                                Alert.alert(
+                                  "Synkroniser gruppedata",
+                                  "Vil du synkronisere dataene som ligger lokalt i denne appen med denne gruppen nå?",
+                                  [
+                                    { text: "Avbryt", style: "cancel" },
+                                    { text: "Synkroniser", onPress: () => syncGroupData(household.id) },
+                                  ],
+                                )
+                              }
+                              disabled={householdBusy}
+                              style={[S.groupSyncButton, { marginTop: 9 }]}
+                            >
+                              <Ionicons name="sync-outline" size={15} color={C.green} />
+                              <Text style={S.groupActionText}>Synkroniser gruppe</Text>
+                            </Pressable>
                           </View>
                         );
                       })}
-                      <Pressable
-                        onPress={() => {
-                          const membership = households[0];
-                          const group = Array.isArray(membership?.households)
-                            ? membership.households[0]
-                            : membership?.households;
-                          if (!group?.id) return;
-                          Alert.alert(
-                            "Synkroniser data",
-                            "Vil du synkronisere dataene som ligger lokalt i denne appen med gruppen nå?",
-                            [
-                              { text: "Avbryt", style: "cancel" },
-                              { text: "Synkroniser", onPress: () => syncGroupData(group.id) },
-                            ],
-                          );
-                        }}
-                        disabled={householdBusy}
-                        accessibilityRole="button"
-                        style={[S.reviewedButton, { alignSelf: "flex-start", marginTop: 8 }]}
-                      >
-                        <Ionicons name="sync-outline" size={18} color={C.green} />
-                        <Text style={S.reviewedButtonText}>
-                          {householdBusy ? "Synkroniserer …" : "Synkroniser data"}
-                        </Text>
-                      </Pressable>
-                      {syncMessage ? (
-                        <Text style={[S.aboutText, { marginTop: 8, color: C.green }]}>
-                          {syncMessage}
-                        </Text>
-                      ) : null}
                     </View>
                   ) : (
                     <View style={{ marginTop: 14 }}>
@@ -1358,22 +1360,58 @@ function AboutOvers({
                       </Pressable>
                     </View>
                   )}
-                  <View style={S.joinGroupCard}>
-                    <Text style={S.aboutTitle}>Bli med i en gruppe</Text>
-                    <Text style={S.aboutText}>Skriv inn den 8-sifrede koden du har fått av gruppeeieren.</Text>
-                    <View style={S.joinGroupRow}>
-                      <TextInput
-                        value={joinCode}
-                        onChangeText={(value) => setJoinCode(value.replace(/\D/g, "").slice(0, 8))}
-                        placeholder="1234 5678"
-                        keyboardType="number-pad"
-                        style={S.joinCodeInput}
-                      />
-                      <Pressable onPress={joinGroupWithCode} disabled={householdBusy} style={S.joinGroupButton}>
-                        <Text style={S.primaryText}>Bli med</Text>
-                      </Pressable>
-                    </View>
-                  </View>
+                  <Pressable
+                    onPress={() =>
+                      Alert.prompt(
+                        "Bli med i en gruppe",
+                        "Skriv inn den 8-sifrede gruppekoden.",
+                        (value) => {
+                          const code = (value || "").replace(/\D/g, "").slice(0, 8);
+                          setJoinCode(code);
+                          if (code.length !== 8) {
+                            setHouseholdError("Gruppekoden må bestå av 8 sifre.");
+                            return;
+                          }
+                          Alert.alert(
+                            "Bli med i gruppe?",
+                            "Hvis koden er gyldig får du tilgang til gruppens delte økonomidata og kan redigere dem.",
+                            [
+                              { text: "Avbryt", style: "cancel" },
+                              {
+                                text: "Bli med",
+                                onPress: async () => {
+                                  setHouseholdBusy(true);
+                                  setHouseholdError("");
+                                  try {
+                                    await acceptGroupInviteCode(code);
+                                    setJoinCode("");
+                                    await refreshHouseholds();
+                                    Alert.alert("Du er med", "Du har nå tilgang til gruppen.");
+                                  } catch (error) {
+                                    setHouseholdError(
+                                      error instanceof Error
+                                        ? error.message
+                                        : "Gruppekoden er ugyldig eller utløpt.",
+                                    );
+                                  } finally {
+                                    setHouseholdBusy(false);
+                                  }
+                                },
+                              },
+                            ],
+                          );
+                        },
+                        "plain-text",
+                        "",
+                        "number-pad",
+                      )
+                    }
+                    style={S.joinGroupCompactButton}
+                  >
+                    <Ionicons name="keypad-outline" size={17} color={C.green} />
+                    <Text style={S.reviewedButtonText}>Bli med i en gruppe</Text>
+                    <Ionicons name="chevron-forward" size={16} color={C.green} />
+                  </Pressable>
                   {householdError ? (
                     <Text style={{ color: C.red, fontSize: 12, marginTop: 10 }}>
                       {householdError}
