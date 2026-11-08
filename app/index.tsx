@@ -19,6 +19,7 @@ import {
   Linking,
   Pressable,
   ScrollView,
+  Share,
   Text,
   TextInput,
   View,
@@ -37,6 +38,7 @@ import {
   signInWithApple,
   signOut,
 } from "../src/overs/authService";
+import { deleteCurrentAccount } from "../src/overs/accountService";
 import {
   acceptGroupInviteCode,
   bootstrapPersonalCloud,
@@ -274,6 +276,17 @@ export default function App() {
       if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
     };
   }, [data, ready, session?.user.id, personalCloudEnabled]);
+
+  const refreshPersonalCloud = async () => {
+    if (!session || !personalCloudEnabled) return;
+    setCloudSyncStatus("syncing");
+    const latest = await loadPersonalCloud();
+    applyingCloudRef.current = true;
+    cloudRevisionRef.current = latest.revision;
+    setData(latest.payload);
+    setCloudSyncStatus("synced");
+    setTimeout(() => { applyingCloudRef.current = false; }, 0);
+  };
 
   const activatePersonalCloud = async () => {
     if (!session) throw new Error("Du må være innlogget.");
@@ -649,6 +662,7 @@ export default function App() {
           personalCloudEnabled={personalCloudEnabled}
           cloudSyncStatus={cloudSyncStatus}
           onEnablePersonalCloud={activatePersonalCloud}
+          onRefreshPersonalCloud={refreshPersonalCloud}
         />
         <Form
           kind={form}
@@ -785,6 +799,7 @@ function AboutOvers({
   personalCloudEnabled,
   cloudSyncStatus,
   onEnablePersonalCloud,
+  onRefreshPersonalCloud,
 }: {
   visible: boolean;
   close: () => void;
@@ -795,6 +810,7 @@ function AboutOvers({
   personalCloudEnabled: boolean;
   cloudSyncStatus: "off" | "syncing" | "synced" | "error";
   onEnablePersonalCloud: () => Promise<void>;
+  onRefreshPersonalCloud: () => Promise<void>;
 }) {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -1030,6 +1046,57 @@ function AboutOvers({
       setAuthBusy(false);
     }
   };
+  const exportMyData = async () => {
+    try {
+      await Share.share({
+        title: "Mine data fra Overs",
+        message: JSON.stringify(
+          {
+            exportedAt: new Date().toISOString(),
+            account: {
+              name: appleDisplayName,
+              email: session?.user.email || null,
+            },
+            data: localData,
+          },
+          null,
+          2,
+        ),
+      });
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Dataene kunne ikke eksporteres.");
+    }
+  };
+
+  const confirmAccountDeletion = () => {
+    Alert.alert(
+      "Slett konto permanent?",
+      "Private skydata, profil og gruppemedlemskap slettes permanent. Hvis du eier en gruppe med andre medlemmer, må medlemmene fjernes først. Lokale data på andre enheter slettes ikke automatisk.",
+      [
+        { text: "Avbryt", style: "cancel" },
+        {
+          text: "Slett konto",
+          style: "destructive",
+          onPress: async () => {
+            setAuthBusy(true);
+            setAuthError("");
+            try {
+              await deleteCurrentAccount();
+              await AsyncStorage.removeItem(K);
+              close();
+            } catch (error) {
+              setAuthError(
+                error instanceof Error ? error.message : "Kontoen kunne ikke slettes.",
+              );
+            } finally {
+              setAuthBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const logOut = async () => {
     setAuthBusy(true);
     setAuthError("");
@@ -1105,6 +1172,28 @@ function AboutOvers({
                       <Ionicons name={personalCloudEnabled ? "cloud-done-outline" : "cloud-upload-outline"} size={17} color={C.green} />
                       <Text style={S.reviewedButtonText}>{personalCloudEnabled ? "Aktivert" : "Aktiver"}</Text>
                     </Pressable>
+                    {personalCloudEnabled ? (
+                      <Pressable
+                        onPress={async () => {
+                          setHouseholdBusy(true);
+                          setHouseholdError("");
+                          try {
+                            await onRefreshPersonalCloud();
+                          } catch (error) {
+                            setHouseholdError(
+                              error instanceof Error ? error.message : "Kunne ikke hente nyeste data.",
+                            );
+                          } finally {
+                            setHouseholdBusy(false);
+                          }
+                        }}
+                        disabled={householdBusy || cloudSyncStatus === "syncing"}
+                        style={S.cloudActionButton}
+                      >
+                        <Ionicons name="sync-outline" size={17} color={C.green} />
+                        <Text style={S.reviewedButtonText}>Synkroniser nå</Text>
+                      </Pressable>
+                    ) : null}
                     <Text style={S.cloudStatusText}>
                       {cloudSyncStatus === "syncing"
                         ? "Synkroniserer …"
@@ -1283,6 +1372,16 @@ function AboutOvers({
                       {householdError}
                     </Text>
                   ) : null}
+                  <View style={S.accountActionRow}>
+                    <Pressable onPress={exportMyData} style={S.reviewedButton}>
+                      <Ionicons name="download-outline" size={18} color={C.green} />
+                      <Text style={S.reviewedButtonText}>Eksporter mine data</Text>
+                    </Pressable>
+                    <Pressable onPress={confirmAccountDeletion} style={[S.reviewedButton, S.accountDeleteButton]}>
+                      <Ionicons name="trash-outline" size={18} color={C.red} />
+                      <Text style={[S.reviewedButtonText, { color: C.red }]}>Slett konto</Text>
+                    </Pressable>
+                  </View>
                   <Pressable
                     onPress={logOut}
                     disabled={authBusy}
@@ -1342,10 +1441,10 @@ function AboutOvers({
             <View style={S.aboutSection}>
               <Text style={S.aboutTitle}>Personvern og lagring</Text>
               <Text style={S.aboutText}>
-                Økonomiske opplysninger du registrerer i denne versjonen lagres
-                lokalt i appens lagring på enheten. Overs har foreløpig ingen
-                konto- eller familiesynkronisering. Sletting av appdata fjerner
-                de registrerte opplysningene fra Overs på denne enheten.
+                Data lagres lokalt på enheten som cache. Når du aktiverer Min
+                sky, lagres private data i Overs-kontoen og synkroniseres mellom
+                enhetene dine. Data du synkroniserer med en gruppe er tilgjengelige
+                for gruppemedlemmene og kan redigeres av dem.
               </Text>
             </View>
             <View style={S.aboutSection}>
