@@ -162,7 +162,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [personalCloudEnabled, setPersonalCloudEnabled] = useState(false);
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<"off" | "syncing" | "synced" | "error">("off");
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<"off" | "loading" | "uploading" | "synced" | "error">("off");
   const [refreshing, setRefreshing] = useState(false);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<Date | null>(null);
   const cloudRevisionRef = useRef<number | null>(null);
@@ -215,7 +215,7 @@ export default function App() {
     }
     let active = true;
     let channel: ReturnType<typeof subscribeToPersonalCloud> | null = null;
-    setCloudSyncStatus("syncing");
+    setCloudSyncStatus("loading");
     // The bootstrap RPC is idempotent: it returns the existing cloud row for
     // this account and only creates one when the account has none. This avoids
     // device-local activation state and makes cloud status follow the account.
@@ -254,7 +254,7 @@ export default function App() {
     if (!ready || !session || !personalCloudEnabled || applyingCloudRef.current) return;
     if (cloudRevisionRef.current === null) return;
     if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
-    setCloudSyncStatus("syncing");
+    setCloudSyncStatus("uploading");
     cloudSaveTimerRef.current = setTimeout(async () => {
       try {
         const saved = await savePersonalCloud(data, cloudRevisionRef.current as number);
@@ -284,7 +284,7 @@ export default function App() {
 
   const refreshPersonalCloud = async () => {
     if (!session || !personalCloudEnabled) return null;
-    setCloudSyncStatus("syncing");
+    setCloudSyncStatus("loading");
     const latest = await loadPersonalCloud();
     applyingCloudRef.current = true;
     cloudRevisionRef.current = latest.revision;
@@ -306,7 +306,20 @@ export default function App() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      if (session && personalCloudEnabled) await refreshPersonalCloud();
+      if (session) {
+        if (personalCloudEnabled) {
+          await refreshPersonalCloud();
+        } else {
+          const record = await bootstrapPersonalCloud(data);
+          applyingCloudRef.current = true;
+          cloudRevisionRef.current = record.revision;
+          setData(record.payload);
+          setPersonalCloudEnabled(true);
+          setCloudSyncStatus("synced");
+          setLastCloudSyncAt(new Date());
+          setTimeout(() => { applyingCloudRef.current = false; }, 0);
+        }
+      }
     } catch {
       setCloudSyncStatus("error");
     } finally {
@@ -316,7 +329,7 @@ export default function App() {
 
   const activatePersonalCloud = async () => {
     if (!session) throw new Error("Du må være innlogget.");
-    setCloudSyncStatus("syncing");
+    setCloudSyncStatus("loading");
     const record = await bootstrapPersonalCloud(data);
     applyingCloudRef.current = true;
     cloudRevisionRef.current = record.revision;
@@ -875,7 +888,7 @@ function AboutOvers({
   authReady: boolean;
   localData: AppData;
   personalCloudEnabled: boolean;
-  cloudSyncStatus: "off" | "syncing" | "synced" | "error";
+  cloudSyncStatus: "off" | "loading" | "uploading" | "synced" | "error";
   onEnablePersonalCloud: () => Promise<void>;
   onRefreshPersonalCloud: () => Promise<{ itemCount: number; revision: number } | null>;
 }) {
@@ -1264,7 +1277,7 @@ function AboutOvers({
                             setHouseholdBusy(false);
                           }
                         }}
-                        disabled={householdBusy || cloudSyncStatus === "syncing"}
+                        disabled={householdBusy || (cloudSyncStatus === "loading" || cloudSyncStatus === "uploading")}
                         style={S.cloudActionButton}
                       >
                         <Ionicons name="sync-outline" size={17} color={C.green} />
@@ -1273,7 +1286,7 @@ function AboutOvers({
                     ) : (
                       <Pressable
                         onPress={enablePersonalCloud}
-                        disabled={householdBusy || cloudSyncStatus === "syncing"}
+                        disabled={householdBusy || (cloudSyncStatus === "loading" || cloudSyncStatus === "uploading")}
                         style={S.cloudActionButton}
                       >
                         <Ionicons name="refresh-outline" size={17} color={C.green} />
@@ -1281,7 +1294,7 @@ function AboutOvers({
                       </Pressable>
                     )}
                     <Text style={S.cloudStatusText}>
-                      {cloudSyncStatus === "syncing"
+                      {(cloudSyncStatus === "loading" || cloudSyncStatus === "uploading")
                         ? "Synkroniserer …"
                         : cloudSyncStatus === "synced"
                           ? "Oppdatert nå"
@@ -1610,7 +1623,7 @@ function Overview({
   onReset: () => void;
   openBudget: () => void;
   go: (t: Tab) => void;
-  cloudSyncStatus: "off" | "syncing" | "synced" | "error";
+  cloudSyncStatus: "off" | "loading" | "uploading" | "synced" | "error";
   personalCloudEnabled: boolean;
   lastCloudSyncAt: Date | null;
   onCloudPress: () => void;
@@ -1978,7 +1991,7 @@ function OverviewHero({
   openBudget: () => void;
   annual: boolean;
   togglePeriod: () => void;
-  cloudSyncStatus: "off" | "syncing" | "synced" | "error";
+  cloudSyncStatus: "off" | "loading" | "uploading" | "synced" | "error";
   personalCloudEnabled: boolean;
   lastCloudSyncAt: Date | null;
   onCloudPress: () => void;
@@ -2004,12 +2017,12 @@ function OverviewHero({
           style={S.cloudHeroStatus}
         >
           <Ionicons
-            name={!personalCloudEnabled ? "cloud-outline" : cloudSyncStatus === "syncing" ? "cloud-upload-outline" : cloudSyncStatus === "error" ? "cloud-offline-outline" : "cloud-done-outline"}
+            name={!personalCloudEnabled ? "cloud-outline" : (cloudSyncStatus === "loading" || cloudSyncStatus === "uploading") ? "cloud-upload-outline" : cloudSyncStatus === "error" ? "cloud-offline-outline" : "cloud-done-outline"}
             size={19}
             color={cloudSyncStatus === "error" ? "#FFD7D7" : "#D9E8E2"}
           />
           <Text style={S.cloudHeroStatusText}>
-            {!personalCloudEnabled ? "Lokal" : cloudSyncStatus === "syncing" ? "Laster opp" : cloudSyncStatus === "error" ? "Feil" : "Oppdatert"}
+            {!personalCloudEnabled ? "Lokal" : (cloudSyncStatus === "loading" || cloudSyncStatus === "uploading") ? "Laster opp" : cloudSyncStatus === "error" ? "Feil" : "Oppdatert"}
           </Text>
         </Pressable>
       </View>
