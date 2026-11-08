@@ -41,6 +41,9 @@ import {
   acceptGroupInviteCode,
   bootstrapPersonalCloud,
   createGroupInviteCode,
+  loadPersonalCloud,
+  savePersonalCloud,
+  subscribeToPersonalCloud,
   createHousehold,
   deleteGroup,
   getGroupMembers,
@@ -155,6 +158,11 @@ export default function App() {
   const [annualView, setAnnualView] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [personalCloudEnabled, setPersonalCloudEnabled] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<"off" | "syncing" | "synced" | "error">("off");
+  const cloudRevisionRef = useRef<number | null>(null);
+  const applyingCloudRef = useRef(false);
+  const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     let mounted = true;
     getSession()
@@ -193,6 +201,92 @@ export default function App() {
         () => {},
       );
   }, [data, ready]);
+  useEffect(() => {
+    if (!ready || !session) {
+      setPersonalCloudEnabled(false);
+      setCloudSyncStatus("off");
+      cloudRevisionRef.current = null;
+      return;
+    }
+    let active = true;
+    let channel: ReturnType<typeof subscribeToPersonalCloud> | null = null;
+    loadPersonalCloud()
+      .then((record) => {
+        if (!active) return;
+        applyingCloudRef.current = true;
+        cloudRevisionRef.current = record.revision;
+        setData(record.payload);
+        setPersonalCloudEnabled(true);
+        setCloudSyncStatus("synced");
+        setTimeout(() => { applyingCloudRef.current = false; }, 0);
+        channel = subscribeToPersonalCloud((next) => {
+          if (!active || next.revision <= (cloudRevisionRef.current ?? -1)) return;
+          applyingCloudRef.current = true;
+          cloudRevisionRef.current = next.revision;
+          setData(next.payload);
+          setCloudSyncStatus("synced");
+          setTimeout(() => { applyingCloudRef.current = false; }, 0);
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        if (error?.code === "PGRST116") {
+          setPersonalCloudEnabled(false);
+          setCloudSyncStatus("off");
+        } else {
+          setCloudSyncStatus("error");
+        }
+      });
+    return () => {
+      active = false;
+      if (channel) channel.unsubscribe();
+    };
+  }, [ready, session?.user.id]);
+
+  useEffect(() => {
+    if (!ready || !session || !personalCloudEnabled || applyingCloudRef.current) return;
+    if (cloudRevisionRef.current === null) return;
+    if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
+    setCloudSyncStatus("syncing");
+    cloudSaveTimerRef.current = setTimeout(async () => {
+      try {
+        const saved = await savePersonalCloud(data, cloudRevisionRef.current as number);
+        cloudRevisionRef.current = saved.revision;
+        setCloudSyncStatus("synced");
+      } catch (error: any) {
+        if (error?.message?.includes("Revision conflict")) {
+          try {
+            const latest = await loadPersonalCloud();
+            applyingCloudRef.current = true;
+            cloudRevisionRef.current = latest.revision;
+            setData(latest.payload);
+            setCloudSyncStatus("synced");
+            setTimeout(() => { applyingCloudRef.current = false; }, 0);
+          } catch {
+            setCloudSyncStatus("error");
+          }
+        } else {
+          setCloudSyncStatus("error");
+        }
+      }
+    }, 700);
+    return () => {
+      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
+    };
+  }, [data, ready, session?.user.id, personalCloudEnabled]);
+
+  const activatePersonalCloud = async () => {
+    if (!session) throw new Error("Du må være innlogget.");
+    setCloudSyncStatus("syncing");
+    const record = await bootstrapPersonalCloud(data);
+    applyingCloudRef.current = true;
+    cloudRevisionRef.current = record.revision;
+    setData(record.payload);
+    setPersonalCloudEnabled(true);
+    setCloudSyncStatus("synced");
+    setTimeout(() => { applyingCloudRef.current = false; }, 0);
+  };
+
   useEffect(() => {
     if (!undo) return;
     const timer = setTimeout(() => setUndo(null), 5000);
@@ -552,6 +646,9 @@ export default function App() {
           session={session}
           authReady={authReady}
           localData={data}
+          personalCloudEnabled={personalCloudEnabled}
+          cloudSyncStatus={cloudSyncStatus}
+          onEnablePersonalCloud={activatePersonalCloud}
         />
         <Form
           kind={form}
@@ -685,6 +782,9 @@ function AboutOvers({
   session,
   authReady,
   localData,
+  personalCloudEnabled,
+  cloudSyncStatus,
+  onEnablePersonalCloud,
 }: {
   visible: boolean;
   close: () => void;
@@ -692,6 +792,9 @@ function AboutOvers({
   session: Session | null;
   authReady: boolean;
   localData: AppData;
+  personalCloudEnabled: boolean;
+  cloudSyncStatus: "off" | "syncing" | "synced" | "error";
+  onEnablePersonalCloud: () => Promise<void>;
 }) {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -701,8 +804,6 @@ function AboutOvers({
   const [householdError, setHouseholdError] = useState("");
   const [syncMessage, setSyncMessage] = useState("");
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
-  const [personalCloudEnabled, setPersonalCloudEnabled] = useState(false);
-  const [personalCloudMessage, setPersonalCloudMessage] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const appVersion = Constants.expoConfig?.version || "Ukjent";
@@ -727,11 +828,8 @@ function AboutOvers({
   const enablePersonalCloud = async () => {
     setHouseholdBusy(true);
     setHouseholdError("");
-    setPersonalCloudMessage("");
     try {
-      await bootstrapPersonalCloud(localData);
-      setPersonalCloudEnabled(true);
-      setPersonalCloudMessage("Dataene dine er lagret i Overs-kontoen.");
+      await onEnablePersonalCloud();
     } catch (error) {
       setHouseholdError(error instanceof Error ? error.message : "Kunne ikke aktivere skylagring.");
     } finally {
@@ -1007,7 +1105,15 @@ function AboutOvers({
                       <Ionicons name={personalCloudEnabled ? "cloud-done-outline" : "cloud-upload-outline"} size={17} color={C.green} />
                       <Text style={S.reviewedButtonText}>{personalCloudEnabled ? "Aktivert" : "Aktiver"}</Text>
                     </Pressable>
-                    {personalCloudMessage ? <Text style={S.cloudStatusText}>{personalCloudMessage}</Text> : null}
+                    <Text style={S.cloudStatusText}>
+                      {cloudSyncStatus === "syncing"
+                        ? "Synkroniserer …"
+                        : cloudSyncStatus === "synced"
+                          ? "Oppdatert nå"
+                          : cloudSyncStatus === "error"
+                            ? "Kunne ikke synkronisere"
+                            : "Ikke aktivert"}
+                    </Text>
                   </View>
                   {households.length ? (
                     <View style={{ marginTop: 14, gap: 6 }}>
