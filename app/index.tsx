@@ -42,6 +42,11 @@ import {
   getMyHouseholds,
   loadHouseholdData,
   saveHouseholdData,
+  createInvitation,
+  deleteGroup,
+  getGroupMembers,
+  removeGroupMember,
+  renameGroup,
 } from "../src/overs/householdService";
 
 import {
@@ -693,6 +698,7 @@ function AboutOvers({
   const [households, setHouseholds] = useState<any[]>([]);
   const [householdError, setHouseholdError] = useState("");
   const [syncMessage, setSyncMessage] = useState("");
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
   const appVersion = Constants.expoConfig?.version || "Ukjent";
 
   const refreshHouseholds = async () => {
@@ -723,6 +729,58 @@ function AboutOvers({
       setHouseholdName("");
     }
   }, [visible, session?.user.id]);
+
+  const refreshGroupMembers = async (householdId: string) => {
+    try {
+      setGroupMembers(await getGroupMembers(householdId));
+    } catch (error) {
+      setHouseholdError(error instanceof Error ? error.message : "Kunne ikke hente gruppemedlemmer.");
+    }
+  };
+
+  const editGroupName = (householdId: string, currentName: string) => {
+    Alert.prompt("Endre gruppenavn", undefined, async (value) => {
+      const name = value?.trim();
+      if (!name || name === currentName) return;
+      setHouseholdBusy(true);
+      try {
+        await renameGroup(householdId, name);
+        await refreshHouseholds();
+      } catch (error) {
+        setHouseholdError(error instanceof Error ? error.message : "Gruppenavnet kunne ikke endres.");
+      } finally { setHouseholdBusy(false); }
+    }, "plain-text", currentName);
+  };
+
+  const inviteMember = (householdId: string) => {
+    Alert.prompt("Inviter gruppemedlem", "Skriv e-postadressen til personen du vil invitere.", async (value) => {
+      const email = value?.trim().toLowerCase();
+      if (!email) return;
+      setHouseholdBusy(true);
+      try {
+        await createInvitation(householdId, email);
+        Alert.alert("Invitasjon opprettet", "Invitasjonen er registrert. Deling av invitasjonslenke kobles på i neste steg.");
+      } catch (error) {
+        setHouseholdError(error instanceof Error ? error.message : "Invitasjonen kunne ikke opprettes.");
+      } finally { setHouseholdBusy(false); }
+    }, "email-address");
+  };
+
+  const confirmDeleteGroup = (householdId: string, name: string) => {
+    Alert.alert("Slett gruppe?", `Gruppen «${name}» og alle skylagrede gruppedata blir permanent slettet. Lokale appdata slettes ikke.`, [
+      { text: "Avbryt", style: "cancel" },
+      { text: "Slett gruppe", style: "destructive", onPress: async () => {
+        setHouseholdBusy(true);
+        try {
+          await deleteGroup(householdId);
+          setGroupMembers([]);
+          await refreshHouseholds();
+        } catch (error) {
+          setHouseholdError(error instanceof Error ? error.message : "Gruppen kunne ikke slettes.");
+        } finally { setHouseholdBusy(false); }
+      }},
+    ]);
+  };
 
   const syncGroupData = async (householdId: string) => {
     setHouseholdBusy(true);
@@ -880,6 +938,42 @@ function AboutOvers({
                             <Text style={S.cardSub}>
                               {membership.role === "owner" ? "Eier" : "Medlem"}
                             </Text>
+                            {membership.role === "owner" ? (
+                              <View style={{ marginTop: 10, gap: 8 }}>
+                                <Pressable onPress={() => editGroupName(household.id, household.name)} style={S.reviewedButton}>
+                                  <Ionicons name="pencil-outline" size={17} color={C.green} />
+                                  <Text style={S.reviewedButtonText}>Endre navn</Text>
+                                </Pressable>
+                                <Pressable onPress={() => { refreshGroupMembers(household.id); inviteMember(household.id); }} style={S.reviewedButton}>
+                                  <Ionicons name="person-add-outline" size={17} color={C.green} />
+                                  <Text style={S.reviewedButtonText}>Inviter medlem</Text>
+                                </Pressable>
+                                <Pressable onPress={() => refreshGroupMembers(household.id)} style={S.reviewedButton}>
+                                  <Ionicons name="people-outline" size={17} color={C.green} />
+                                  <Text style={S.reviewedButtonText}>Vis medlemmer</Text>
+                                </Pressable>
+                                {groupMembers.map((member: any) => (
+                                  <View key={member.user_id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 5 }}>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={S.cardTitle}>{member.display_name || member.email || "Medlem"}</Text>
+                                      <Text style={S.cardSub}>{member.role === "owner" ? "Eier" : "Medlem"}</Text>
+                                    </View>
+                                    {member.role !== "owner" ? (
+                                      <Pressable onPress={() => Alert.alert("Fjern medlem?", "Medlemmet mister tilgang til gruppens data.", [
+                                        { text: "Avbryt", style: "cancel" },
+                                        { text: "Fjern", style: "destructive", onPress: async () => { await removeGroupMember(household.id, member.user_id); await refreshGroupMembers(household.id); } },
+                                      ])} accessibilityLabel="Fjern medlem" style={S.insDeleteAction}>
+                                        <Ionicons name="trash-outline" size={18} color={C.red} />
+                                      </Pressable>
+                                    ) : null}
+                                  </View>
+                                ))}
+                                <Pressable onPress={() => confirmDeleteGroup(household.id, household.name)} style={[S.reviewedButton, { borderColor: C.redPale }]}>
+                                  <Ionicons name="trash-outline" size={17} color={C.red} />
+                                  <Text style={[S.reviewedButtonText, { color: C.red }]}>Slett gruppe</Text>
+                                </Pressable>
+                              </View>
+                            ) : null}
                           </View>
                         );
                       })}
