@@ -392,29 +392,29 @@ export default function App() {
   }, [data]);
   const allInsights = useMemo(() => {
     if (!data.onboardingComplete) return [];
+    const foundationInsights: Insight[] = [
+      ...(data.incomes.length === 0 ? [{ id: "income-missing", kind: "action" as const, icon: "cash-outline" as Icon, title: "Ingen inntekter registrert", detail: "Legg til inntekt for å få et mer komplett budsjett.", target: "Budsjett" as Tab }] : []),
+      ...(data.expenses.length === 0 ? [{ id: "expense-missing", kind: "action" as const, icon: "card-outline" as Icon, title: "Ingen utgifter registrert", detail: "Legg til utgift for å få et mer komplett budsjett.", target: "Budsjett" as Tab }] : []),
+      ...(data.subscriptions.length === 0 ? [{ id: "subscription-missing", kind: "action" as const, icon: "repeat-outline" as Icon, title: "Ingen abonnement registrert", detail: "Legg til abonnement for å få en mer komplett oversikt.", target: "Abonnement" as Tab }] : []),
+      ...(data.insurance.length === 0 ? [{ id: "insurance-missing", kind: "action" as const, icon: "shield-checkmark-outline" as Icon, title: "Ingen forsikringer registrert", detail: "Legg til forsikring for å få en mer komplett oversikt.", target: "Forsikringer" as Tab }] : []),
+    ];
     const built = buildInsights(data, budget).map((insight) =>
       insight.id === "buffer-missing"
-        ? {
-            ...insight,
-            title: "Opprett et sparemål",
-            detail:
-              "Et sparemål gjør det enklere å følge utviklingen mot noe du ønsker å sette penger til side for.",
-          }
+        ? { ...insight, title: "Opprett et sparemål", detail: "Et sparemål gjør det enklere å følge utviklingen mot noe du ønsker å sette penger til side for.", target: "Sparing" as Tab }
         : insight,
     );
-    const normalized = built.map((insight) => {
+    const normalized = [...foundationInsights, ...built].map((insight) => {
       const text = `${insight.title} ${insight.detail}`.toLocaleLowerCase("nb-NO");
-      if (text.includes("overskudd i budsjettet")) {
-        return { ...insight, target: "Oversikt" as Tab };
-      }
-      return insight;
+      return text.includes("overskudd i budsjettet") ? { ...insight, target: "Oversikt" as Tab } : insight;
     });
     const priority = (insight: Insight) => {
-      const text = `${insight.title} ${insight.detail}`.toLocaleLowerCase("nb-NO");
-      if (data.incomes.length === 0 && text.includes("inntekt")) return 0;
-      if (data.goals.length === 0 && insight.id === "buffer-missing") return 80;
-      if (text.includes("overskudd i budsjettet")) return 100;
-      return 20;
+      if (insight.id === "income-missing") return 0;
+      if (insight.id === "expense-missing") return 10;
+      if (insight.id === "subscription-missing") return 20;
+      if (insight.id === "insurance-missing") return 30;
+      if (insight.id === "buffer-missing") return 80;
+      if (insight.id === "budget-surplus") return 100;
+      return 50;
     };
     return [...normalized].sort((a, b) => priority(a) - priority(b));
   }, [data, budget]);
@@ -1916,7 +1916,7 @@ function Overview({
                       size={18}
                       color={C.green}
                     />
-                    <Text style={S.reviewedButtonText}>Legg til buffer</Text>
+                    <Text style={S.reviewedButtonText}>Opprett sparemål</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => onDismiss(first.id)}
@@ -1937,13 +1937,21 @@ function Overview({
                     style={S.insightOpenAction}
                   >
                     <Text style={S.insightOpenActionText}>
-                      {first.target === "Forsikringer"
-                        ? "Åpne forsikringer"
-                        : first.target === "Abonnement"
-                          ? "Åpne abonnement"
-                          : first.target === "Sparing"
-                            ? "Åpne sparemål"
-                            : "Åpne budsjett"}
+                      {first.id === "income-missing"
+                        ? "Legg til inntekt"
+                        : first.id === "expense-missing"
+                          ? "Legg til utgift"
+                          : first.id === "subscription-missing"
+                            ? "Legg til abonnement"
+                            : first.id === "insurance-missing"
+                              ? "Legg til forsikring"
+                              : first.target === "Forsikringer"
+                                ? "Åpne forsikringer"
+                                : first.target === "Abonnement"
+                                  ? "Åpne abonnement"
+                                  : first.target === "Sparing"
+                                    ? "Åpne sparemål"
+                                    : "Åpne budsjett"}
                     </Text>
                     <Ionicons
                       name="chevron-forward"
@@ -1956,11 +1964,23 @@ function Overview({
                     style={S.reviewedButton}
                   >
                     <Ionicons
-                      name="checkmark-circle-outline"
+                      name={
+                        first.kind === "positive"
+                          ? "checkmark-circle-outline"
+                          : first.kind === "action"
+                            ? "play-skip-forward-outline"
+                            : "checkmark-outline"
+                      }
                       size={18}
                       color={C.green}
                     />
-                    <Text style={S.reviewedButtonText}>Gjennomgått</Text>
+                    <Text style={S.reviewedButtonText}>
+                      {first.kind === "positive"
+                        ? "Topp"
+                        : first.kind === "action"
+                          ? "Hopp over"
+                          : "Gjennomgått"}
+                    </Text>
                   </Pressable>
                 </>
               )}
@@ -2015,8 +2035,24 @@ function Overview({
                       onPress={() => onDismiss(r.id)}
                       style={S.rowDone}
                     >
-                      <Ionicons name="checkmark" size={16} color={C.green} />
-                      <Text style={S.rowDoneText}>Gjennomgått</Text>
+                      <Ionicons
+                        name={
+                          r.kind === "positive"
+                            ? "checkmark-circle-outline"
+                            : r.kind === "action"
+                              ? "play-skip-forward-outline"
+                              : "checkmark-outline"
+                        }
+                        size={16}
+                        color={C.green}
+                      />
+                      <Text style={S.rowDoneText}>
+                        {r.kind === "positive"
+                          ? "Topp"
+                          : r.kind === "action"
+                            ? "Hopp over"
+                            : "Gjennomgått"}
+                      </Text>
                     </Pressable>
                   </View>
                 </View>
