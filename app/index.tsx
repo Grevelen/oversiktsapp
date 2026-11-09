@@ -165,6 +165,7 @@ export default function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState<"off" | "loading" | "uploading" | "synced" | "error">("off");
   const [refreshing, setRefreshing] = useState(false);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<Date | null>(null);
+  const [cloudStatusOpen, setCloudStatusOpen] = useState(false);
   const cloudRevisionRef = useRef<number | null>(null);
   const applyingCloudRef = useRef(false);
   const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -642,10 +643,7 @@ export default function App() {
           onOpenAbout={() => setAboutOpen(true)}
           cloudSyncStatus={cloudSyncStatus}
           personalCloudEnabled={personalCloudEnabled}
-          onCloudPress={() => {
-            if (!session || !personalCloudEnabled) return setAboutOpen(true);
-            pullToRefresh();
-          }}
+          onCloudPress={() => setCloudStatusOpen(true)}
         />
         <ScrollView
           contentContainerStyle={S.scroll}
@@ -731,6 +729,19 @@ export default function App() {
           )}
         </ScrollView>
         <Nav active={tab} go={go} />
+        <CloudStatusModal
+          visible={cloudStatusOpen}
+          close={() => setCloudStatusOpen(false)}
+          status={cloudSyncStatus}
+          enabled={personalCloudEnabled}
+          lastSyncAt={lastCloudSyncAt}
+          syncing={refreshing}
+          onSync={pullToRefresh}
+          openAccount={() => {
+            setCloudStatusOpen(false);
+            setAboutOpen(true);
+          }}
+        />
         <AboutOvers
           visible={aboutOpen}
           close={() => setAboutOpen(false)}
@@ -872,35 +883,21 @@ function Header({
   return (
     <View style={S.header}>
       <View style={S.brandTitle}>
-        <Image
-          source={require("../assets/images/icon.png")}
-          style={S.headerLogo}
-        />
         <Text style={S.title}>{title}</Text>
       </View>
       <View style={S.headerActions}>
         <Pressable
           onPress={onCloudPress}
           accessibilityRole="button"
-          accessibilityLabel={`Sky: ${cloudLabel}`}
-          style={[
-            S.headerCloudStatus,
-            cloudSyncStatus === "error" && S.headerCloudStatusError,
-          ]}
+          accessibilityLabel={`Skystatus: ${cloudLabel}`}
+          accessibilityHint="Viser informasjon om synkronisering og skyikoner"
+          style={[S.headerCloudStatus, cloudSyncStatus === "error" && S.headerCloudStatusError]}
         >
           <Ionicons
             name={cloudIcon as Icon}
-            size={17}
+            size={19}
             color={cloudSyncStatus === "error" ? C.red : C.green}
           />
-          <Text
-            style={[
-              S.headerCloudText,
-              cloudSyncStatus === "error" && S.headerCloudTextError,
-            ]}
-          >
-            {cloudLabel}
-          </Text>
         </Pressable>
         <Pressable
           onPress={onOpenAbout}
@@ -916,6 +913,47 @@ function Header({
       </View>
     </View>
   );
+}
+function CloudStatusModal({ visible, close, status, enabled, lastSyncAt, syncing, onSync, openAccount }: {
+  visible: boolean; close: () => void;
+  status: "off" | "loading" | "uploading" | "synced" | "error";
+  enabled: boolean; lastSyncAt: Date | null; syncing: boolean;
+  onSync: () => Promise<void>; openAccount: () => void;
+}) {
+  const title = !enabled ? "Kobler til skyen" : status === "loading" ? "Henter nyeste data" : status === "uploading" ? "Laster opp endringer" : status === "error" ? "Kunne ikke synkronisere" : "Alt er oppdatert";
+  const icon: Icon = !enabled ? "cloud-outline" : status === "loading" ? "sync-outline" : status === "uploading" ? "cloud-upload-outline" : status === "error" ? "cloud-offline-outline" : "cloud-done-outline";
+  const rows: { icon: Icon; title: string; text: string; error?: boolean }[] = [
+    { icon: "cloud-done-outline", title: "Oppdatert", text: "Lokal data og skydata er synkronisert." },
+    { icon: "sync-outline", title: "Henter", text: "Overs henter nyeste data fra skyen." },
+    { icon: "cloud-upload-outline", title: "Laster opp", text: "Nye endringer lagres i skyen." },
+    { icon: "cloud-offline-outline", title: "Feil", text: "Synkroniseringen kunne ikke fullføres.", error: true },
+    { icon: "cloud-outline", title: "Kobler til", text: "Overs kobler kontoen til skylagringen." },
+  ];
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
+    <View style={S.cloudInfoRoot}>
+      <Pressable style={S.cloudInfoBackdrop} onPress={close} />
+      <View style={S.cloudInfoCard}>
+        <View style={S.cloudInfoHead}>
+          <View style={[S.cloudInfoCurrentIcon, status === "error" && S.cloudInfoCurrentIconError]}>
+            <Ionicons name={icon} size={23} color={status === "error" ? C.red : C.green} />
+          </View>
+          <View style={S.flex}><Text style={S.greenKicker}>SKYSTATUS</Text><Text style={S.cloudInfoTitle}>{title}</Text></View>
+          <Pressable onPress={close} style={S.closeCircle}><Ionicons name="close" size={20} color={C.ink} /></Pressable>
+        </View>
+        {lastSyncAt ? <Text style={S.cloudInfoLastSync}>Sist oppdatert {lastSyncAt.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" })}</Text> : null}
+        <View style={S.cloudInfoLegend}>
+          <Text style={S.cloudInfoLegendTitle}>Dette betyr ikonene</Text>
+          {rows.map((row) => <View key={row.title} style={S.cloudInfoRow}>
+            <View style={[S.cloudInfoRowIcon, row.error && S.cloudInfoRowIconError]}><Ionicons name={row.icon} size={18} color={row.error ? C.red : C.green} /></View>
+            <View style={S.flex}><Text style={[S.cloudInfoRowTitle, row.error && { color: C.red }]}>{row.title}</Text><Text style={S.cloudInfoRowText}>{row.text}</Text></View>
+          </View>)}
+        </View>
+        {enabled ? <Pressable onPress={onSync} disabled={syncing || status === "loading" || status === "uploading"} style={[S.primary, S.cloudInfoPrimary]}>
+          <Ionicons name="sync-outline" size={18} color={C.white} /><Text style={S.primaryText}>{status === "error" ? "Prøv igjen" : "Synkroniser nå"}</Text>
+        </Pressable> : <Pressable onPress={openAccount} style={[S.primary, S.cloudInfoPrimary]}><Text style={S.primaryText}>Åpne konto</Text></Pressable>}
+      </View>
+    </View>
+  </Modal>;
 }
 function AboutOvers({
   visible,
@@ -1260,9 +1298,12 @@ function AboutOvers({
         <Pressable style={S.backdrop} onPress={close} />
         <View style={S.aboutSheet}>
           <View style={S.modalHead}>
-            <View>
-              <Text style={S.greenKicker}>OM OVERS</Text>
-              <Text style={S.modalTitle}>Overs</Text>
+            <View style={S.aboutBrand}>
+              <Image
+                source={require("../assets/images/icon.png")}
+                style={S.aboutBrandLogo}
+              />
+              <Text style={S.aboutBrandTitle}>Overs</Text>
             </View>
             <Pressable
               onPress={close}
@@ -1383,7 +1424,7 @@ function AboutOvers({
                                 >
                                   <Pressable
                                     onPress={() => editGroupName(household.id, household.name)}
-                                    style={S.groupActionButton}
+                                    style={[S.groupActionButton, S.editButtonBorder]}
                                   >
                                     <Ionicons name="pencil-outline" size={15} color={C.green} />
                                     <Text style={S.groupActionText}>Rediger</Text>
@@ -1538,14 +1579,6 @@ function AboutOvers({
                       {householdError}
                     </Text>
                   ) : null}
-                  <Pressable
-                    onPress={exportMyData}
-                    accessibilityRole="button"
-                    style={[S.reviewedButton, { alignSelf: "flex-start", marginTop: 12 }]}
-                  >
-                    <Ionicons name="download-outline" size={18} color={C.green} />
-                    <Text style={S.reviewedButtonText}>Eksporter mine data</Text>
-                  </Pressable>
                 </>
               ) : (
                 <>
@@ -1584,7 +1617,7 @@ function AboutOvers({
               ) : null}
             </View>
             <View style={S.aboutSection}>
-              <Text style={S.aboutTitle}>Økonomisk oversikt</Text>
+              <Text style={S.aboutTitle}>Om Overs</Text>
               <Text style={S.aboutText}>
                 Overs hjelper deg å samle og strukturere opplysninger om
                 inntekter, utgifter, sparing, forsikringer og abonnement. Overs
@@ -2114,6 +2147,7 @@ function BudgetView({
   editIncome: (id: string) => void;
   editExpense: (row: BudgetRow) => void;
 }) {
+  const [showLeftInfo, setShowLeftInfo] = useState(false);
   const [openSections, setOpenSections] = useState({
     income: false,
     expense: false,
@@ -2302,10 +2336,66 @@ function BudgetView({
         label="PENGER TIL OVERS"
         value={budget.left}
         annual={annual}
-        detail="Inntekter − utgifter − fast sparing"
+        detail=""
         color={budget.left >= 0 ? C.dark : C.red}
         open={false}
+        onInfo={() => setShowLeftInfo(true)}
       />
+
+      <Modal
+        visible={showLeftInfo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLeftInfo(false)}
+      >
+        <View style={S.moneyInfoRoot}>
+          <Pressable style={S.moneyInfoBackdrop} onPress={() => setShowLeftInfo(false)} />
+          <View style={S.moneyInfoCard}>
+            <View style={S.moneyInfoHead}>
+              <View style={S.moneyInfoIcon}>
+                <Ionicons name="information-outline" size={22} color={C.green} />
+              </View>
+              <View style={S.flex}>
+                <Text style={S.moneyInfoKicker}>PENGER TIL OVERS</Text>
+                <Text style={S.moneyInfoTitle}>Slik regner Overs</Text>
+              </View>
+              <Pressable onPress={() => setShowLeftInfo(false)} style={S.closeCircle}>
+                <Ionicons name="close" size={20} color={C.ink} />
+              </Pressable>
+            </View>
+            <Text style={S.moneyInfoText}>
+              Penger til overs viser hva som er igjen etter registrerte inntekter,
+              utgifter og fast sparing.
+            </Text>
+            <View style={S.moneyInfoFormula}>
+              <View style={S.moneyInfoFormulaRow}>
+                <Text style={S.moneyInfoFormulaLabel}>Inntekter</Text>
+                <Text style={S.moneyInfoFormulaValue}>{kr(Math.round(budget.income * (annual ? 12 : 1)))}</Text>
+              </View>
+              <View style={S.moneyInfoFormulaRow}>
+                <Text style={S.moneyInfoFormulaLabel}>− Utgifter</Text>
+                <Text style={S.moneyInfoFormulaValue}>{kr(Math.round(budget.expense * (annual ? 12 : 1)))}</Text>
+              </View>
+              <View style={S.moneyInfoFormulaRow}>
+                <Text style={S.moneyInfoFormulaLabel}>− Fast sparing</Text>
+                <Text style={S.moneyInfoFormulaValue}>{kr(Math.round(budget.saving * (annual ? 12 : 1)))}</Text>
+              </View>
+              <View style={S.moneyInfoDivider} />
+              <View style={S.moneyInfoFormulaRow}>
+                <Text style={S.moneyInfoResultLabel}>Penger til overs</Text>
+                <Text style={S.moneyInfoResultValue}>{kr(Math.round(budget.left * (annual ? 12 : 1)))}</Text>
+              </View>
+            </View>
+            <Text style={S.moneyInfoNote}>
+              Beløpet bygger på det du har registrert i Overs. Endrer du inntekter,
+              utgifter eller fast sparing, oppdateres beløpet automatisk.
+            </Text>
+            <Pressable onPress={() => setShowLeftInfo(false)} style={[S.primary, { marginTop: 4 }]}>
+              <Text style={S.primaryText}>Forstått</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <BudgetDetail
         selected={selected}
@@ -2332,6 +2422,7 @@ function BudgetHero({
   open,
   onPress,
   onAdd,
+  onInfo,
   annual,
   togglePeriod,
 }: {
@@ -2342,6 +2433,7 @@ function BudgetHero({
   open: boolean;
   onPress?: () => void;
   onAdd?: () => void;
+  onInfo?: () => void;
   annual: boolean;
   togglePeriod?: () => void;
 }) {
@@ -2365,6 +2457,19 @@ function BudgetHero({
         <Text style={S.budgetHeroDetail}>{detail}</Text>
       </View>
       <View style={S.budgetHeroActions}>
+        {onInfo ? (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              onInfo();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Slik beregnes penger til overs"
+            style={S.budgetInfoButton}
+          >
+            <Ionicons name="information-outline" size={21} color="#EFE8DD" />
+          </Pressable>
+        ) : null}
         {onAdd ? (
           <Pressable
             onPress={(e) => {
@@ -2628,7 +2733,7 @@ function InsuranceView({
                 </View>
                 <View style={S.insPricePanel}>
                   <View>
-                    <Text style={S.insEyebrow}>NORMALISERT PRIS</Text>
+                    <Text style={[S.insEyebrow, { color: C.white }]}>PRIS</Text>
                     <Text style={S.insPrice}>
                       {kr(selected.monthly)}
                       <Text style={S.insPriceUnit}>/mnd</Text>
@@ -2843,7 +2948,7 @@ function Subscriptions({
                 </View>
                 <View style={S.insPricePanel}>
                   <View>
-                    <Text style={S.insEyebrow}>NORMALISERT PRIS</Text>
+                    <Text style={[S.insEyebrow, { color: C.white }]}>PRIS</Text>
                     <Text style={S.insPrice}>
                       {kr(selected.monthly)}
                       <Text style={S.insPriceUnit}>/mnd</Text>
@@ -3637,6 +3742,13 @@ function Form({
             {kind === "income" ? (
               <>
                 <Text style={S.formLabel}>Inntektstype</Text>
+                
+                <TextInput
+                  value={f.category || ""}
+                  onChangeText={(v) => set("category", v)}
+                  placeholder="Skriv egen tekst eller velg kategori under"
+                  style={S.input}
+                />
                 {!incomeGroup ? (
                   <View style={S.categoryGrid}>
                     {incomeTypes.map(([group]) => (
@@ -3695,12 +3807,7 @@ function Form({
                     </View>
                   </>
                 )}
-                <TextInput
-                  value={f.category || ""}
-                  onChangeText={(v) => set("category", v)}
-                  placeholder="Skriv egen inntektstype (valgfritt)"
-                  style={S.input}
-                />
+                
                 <TextSuggestions
                   query={f.category || ""}
                   groups={incomeTypes}
@@ -3763,6 +3870,12 @@ function Form({
             {kind === "expense" ? (
               <>
                 <Text style={S.formLabel}>Utgiftstype</Text>
+<TextInput
+                  value={f.name || ""}
+                  onChangeText={(v) => set("name", v)}
+                  placeholder="Skriv egen tekst eller velg kategori under"
+                  style={S.input}
+                />
                 {!expenseGroup ? (
                   <View style={S.categoryGrid}>
                     {expenseTypes.map(([group]) => (
@@ -4004,18 +4117,7 @@ function Form({
                     />
                   </View>
                 ) : null}
-                <TextInput
-                  value={f.name || ""}
-                  onChangeText={(v) => set("name", v)}
-                  placeholder={
-                    expenseGroup === "Abonnement"
-                      ? "Skriv navn på abonnement"
-                      : expenseGroup && f.name === ""
-                        ? "Skriv egen utgiftstype"
-                        : "Eget navn (valgfritt)"
-                  }
-                  style={S.input}
-                />
+                
                 <TextSuggestions
                   query={f.name || ""}
                   groups={expenseTypes}
@@ -4075,6 +4177,21 @@ function Form({
             {kind === "insurance" ? (
               <>
                 <Text style={S.formLabel}>Type forsikring</Text>
+<TextInput
+                  value={f.name || ""}
+                  onChangeText={(v) => {
+                    setCustomInsuranceSelected(
+                      !insuranceTypes.some(
+                        (t) =>
+                          !/^Annen/i.test(t) &&
+                          normalizeSearchText(t) === normalizeSearchText(v),
+                      ),
+                    );
+                    set("name", v);
+                  }}
+                  placeholder="Skriv egen tekst eller velg kategori under"
+                  style={S.input}
+                />
                 <View style={S.suggestionWrap}>
                   {insuranceTypes.map((t) => (
                     <Pressable
@@ -4104,15 +4221,7 @@ function Form({
                     </Pressable>
                   ))}
                 </View>
-                <TextInput
-                  value={f.name || ""}
-                  onChangeText={(v) => {
-                    setCustomInsuranceSelected(true);
-                    set("name", v);
-                  }}
-                  placeholder="Skriv type forsikring"
-                  style={S.input}
-                />
+                
                 <TextSuggestions
                   query={f.name || ""}
                   groups={[["Forsikringer", insuranceTypes]]}
@@ -4333,6 +4442,12 @@ function Form({
             {kind === "subscription" ? (
               <>
                 <Text style={S.formLabel}>Kategori</Text>
+                <TextInput
+                  value={f.name || ""}
+                  onChangeText={(v) => set("name", v)}
+                  placeholder="Skriv egen tekst eller velg kategori under"
+                  style={S.input}
+                />
                 {!subscriptionGroup ? (
                   <View style={S.categoryGrid}>
                     {subscriptionTypes.map(([group]) => (
@@ -4428,16 +4543,7 @@ function Form({
                     </View>
                   </>
                 )}
-                <TextInput
-                  value={f.name || ""}
-                  onChangeText={(v) => set("name", v)}
-                  placeholder={
-                    subscriptionGroup === "Annet" || f.name === ""
-                      ? "Skriv navn på abonnement"
-                      : "Navn på abonnement"
-                  }
-                  style={S.input}
-                />
+                
                 <TextSuggestions
                   query={f.name || ""}
                   groups={subscriptionTypes}
@@ -4551,16 +4657,18 @@ function Form({
                     </Pressable>
                   ))}
                 </View>
-                <TextInput
-                  value={f.name || ""}
-                  onChangeText={(v) => set("name", v)}
-                  placeholder="Navn"
-                  style={S.input}
-                />
+                
                 <TextInput
                   value={f.monthly || ""}
                   onChangeText={(v) => set("monthly", groupDigits(v))}
                   placeholder="Fast månedlig sparing"
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+                <TextInput
+                  value={f.target || ""}
+                  onChangeText={(v) => set("target", groupDigits(v))}
+                  placeholder="Målbeløp (valgfritt)"
                   keyboardType="decimal-pad"
                   style={S.input}
                 />
@@ -4572,13 +4680,6 @@ function Form({
                     </Text>
                   </View>
                 ) : null}
-                <TextInput
-                  value={f.target || ""}
-                  onChangeText={(v) => set("target", groupDigits(v))}
-                  placeholder="Målbeløp (valgfritt)"
-                  keyboardType="decimal-pad"
-                  style={S.input}
-                />
                 <TextInput
                   value={f.saved || ""}
                   onChangeText={(v) => set("saved", groupDigits(v))}
